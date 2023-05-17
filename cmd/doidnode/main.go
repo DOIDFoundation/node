@@ -17,7 +17,7 @@ import (
 	cmtflags "github.com/cometbft/cometbft/libs/cli/flags"
 	cmtlog "github.com/cometbft/cometbft/libs/log"
 	nm "github.com/cometbft/cometbft/node"
-	"github.com/dgraph-io/badger/v3"
+	cosmosdb "github.com/cosmos/cosmos-db"
 	"github.com/spf13/viper"
 )
 
@@ -47,8 +47,8 @@ func main() {
 		log.Fatalf("Invalid configuration data: %v", err)
 	}
 
-	dbPath := filepath.Join(homeDir, "badger")
-	db, err := badger.Open(badger.DefaultOptions(dbPath))
+	dbPath := filepath.Join(homeDir, "db")
+	db, err := cosmosdb.NewDB("data", cosmosdb.GoLevelDBBackend, dbPath)
 	if err != nil {
 		log.Fatalf("Opening database: %v", err)
 	}
@@ -58,7 +58,7 @@ func main() {
 		}
 	}()
 
-	app := NewKVStoreApplication(db)
+	app := NewKVStoreApplication(&db)
 
 	pv := privval.LoadFilePV(
 		config.PrivValidatorKeyFile(),
