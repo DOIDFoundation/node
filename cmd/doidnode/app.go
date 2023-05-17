@@ -5,18 +5,23 @@ import (
 	"log"
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
-	"github.com/dgraph-io/badger/v3"
+	cosmosdb "github.com/cosmos/cosmos-db"
+	"github.com/cosmos/iavl"
 )
 
 type KVStoreApplication struct {
-	db           *badger.DB
-	onGoingBlock *badger.Txn
+	db   *cosmosdb.DB
+	tree *iavl.MutableTree
 }
 
 var _ abcitypes.Application = (*KVStoreApplication)(nil)
 
-func NewKVStoreApplication(db *badger.DB) *KVStoreApplication {
-	return &KVStoreApplication{db: db}
+func NewKVStoreApplication(db *cosmosdb.DB) *KVStoreApplication {
+	tree, err := iavl.NewMutableTree(*db, 128, false)
+	if err != nil {
+		log.Panicf("error creating iavl multable tree: %v", err)
+	}
+	return &KVStoreApplication{db: db, tree: tree}
 }
 
 func (app *KVStoreApplication) Info(info abcitypes.RequestInfo) abcitypes.ResponseInfo {
@@ -25,25 +30,14 @@ func (app *KVStoreApplication) Info(info abcitypes.RequestInfo) abcitypes.Respon
 
 func (app *KVStoreApplication) Query(req abcitypes.RequestQuery) abcitypes.ResponseQuery {
 	resp := abcitypes.ResponseQuery{Key: req.Data}
-
-	dbErr := app.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(req.Data)
-		if err != nil {
-			if err != badger.ErrKeyNotFound {
-				return err
-			}
-			resp.Log = "key does not exist"
-			return nil
-		}
-
-		return item.Value(func(val []byte) error {
-			resp.Log = "exists"
-			resp.Value = val
-			return nil
-		})
-	})
-	if dbErr != nil {
-		log.Panicf("Error reading database, unable to execute query: %v", dbErr)
+	item, err := app.tree.Get(req.Data)
+	if item != nil {
+		resp.Log = "exists"
+		resp.Value = item
+	} else if err != nil {
+		resp.Log = err.Error()
+	} else {
+		resp.Log = "key does not exist"
 	}
 	return resp
 }
@@ -76,7 +70,6 @@ func (app *KVStoreApplication) ProcessProposal(proposal abcitypes.RequestProcess
 }
 
 func (app *KVStoreApplication) BeginBlock(block abcitypes.RequestBeginBlock) abcitypes.ResponseBeginBlock {
-	app.onGoingBlock = app.db.NewTransaction(true)
 	return abcitypes.ResponseBeginBlock{}
 }
 
@@ -88,7 +81,7 @@ func (app *KVStoreApplication) DeliverTx(req abcitypes.RequestDeliverTx) abcityp
 	parts := bytes.SplitN(req.Tx, []byte("="), 2)
 	key, value := parts[0], parts[1]
 
-	if err := app.onGoingBlock.Set(key, value); err != nil {
+	if _, err := app.tree.Set(key, value); err != nil {
 		log.Panicf("Error writing to database, unable to execute tx: %v", err)
 	}
 
@@ -100,10 +93,11 @@ func (app *KVStoreApplication) EndBlock(block abcitypes.RequestEndBlock) abcityp
 }
 
 func (app *KVStoreApplication) Commit() abcitypes.ResponseCommit {
-	if err := app.onGoingBlock.Commit(); err != nil {
+	hash, _, err := app.tree.SaveVersion()
+	if err != nil {
 		log.Panicf("Error writing to database, unable to commit block: %v", err)
 	}
-	return abcitypes.ResponseCommit{Data: []byte{}}
+	return abcitypes.ResponseCommit{Data: hash}
 }
 
 func (app *KVStoreApplication) ListSnapshots(snapshots abcitypes.RequestListSnapshots) abcitypes.ResponseListSnapshots {
