@@ -3,8 +3,8 @@
 ## Start
 
 ```
-go run github.com/cometbft/cometbft/cmd/cometbft@v0.37.0 init --home /tmp/doid-node-home
-go run ./cmd/doidnode -datadir /tmp/doid-node-home
+go run ./cmd/doidnode init --home /tmp/doid-node-home
+go run ./cmd/doidnode start --home /tmp/doid-node-home
 ```
 
 ## Test

@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"bytes"
@@ -18,12 +18,11 @@ type KVStoreApplication struct {
 }
 
 type DoidTransactionType struct {
-	Owner crypto.Address `json:"owner"`
-	Name string `json:"name"`
-	Code uint64 `json:"code"`
-	Signature []byte    `json:"signature"`
+	Owner     crypto.Address `json:"owner"`
+	Name      string         `json:"name"`
+	Code      uint64         `json:"code"`
+	Signature []byte         `json:"signature"`
 }
-
 
 var _ abcitypes.Application = (*KVStoreApplication)(nil)
 
@@ -68,21 +67,21 @@ func (app *KVStoreApplication) isValid(tx []byte) uint32 {
 
 	doidTx := DoidTransactionType{}
 	for i := 0; i < len(pairs); i++ {
-		kv := bytes.Split(pairs[i], []byte("="));
+		kv := bytes.Split(pairs[i], []byte("="))
 		if len(kv) != 2 {
-			return 1;
+			return 1
 		}
-		key,value := kv[0], kv[1];
+		key, value := kv[0], kv[1]
 		switch string(key) {
-        case "owner":
-           doidTx.Owner = value
-        case "name":
-            doidTx.Name = string((value));   
-        case "signature":     
-           doidTx.Signature = value  
+		case "owner":
+			doidTx.Owner = value
+		case "name":
+			doidTx.Name = string((value))
+		case "signature":
+			doidTx.Signature = value
 		case "code":
-			doidTx.Code, _ =  strconv.ParseUint(string(value), 10, 64)
-        }
+			doidTx.Code, _ = strconv.ParseUint(string(value), 10, 64)
+		}
 	}
 	fmt.Println("----------------", doidTx.Code, doidTx.Name, doidTx.Owner, doidTx.Signature)
 
