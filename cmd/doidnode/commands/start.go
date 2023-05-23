@@ -27,7 +27,7 @@ var StartCmd = &cobra.Command{
 			return fmt.Errorf("failed to start node: %w", err)
 		}
 
-		logger.Info("Started node")
+		logger.Info("started node")
 
 		// Stop upon receiving SIGTERM or CTRL-C.
 		os.TrapSignal(logger, func() {
