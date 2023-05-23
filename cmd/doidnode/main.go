@@ -10,8 +10,7 @@ import (
 )
 
 func main() {
-	rootCmd := commands.NewRootCmd()
-	cmd := cli.PrepareBaseCmd(rootCmd, "DOID", os.ExpandEnv(filepath.Join("$HOME", ".doidnode")))
+	cmd := cli.PrepareBaseCmd(commands.RootCmd, "DOID", os.ExpandEnv(filepath.Join("$HOME", ".doidnode")))
 
 	if err := cmd.Execute(); err != nil {
 		panic(err)

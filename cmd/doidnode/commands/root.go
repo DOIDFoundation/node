@@ -1,32 +1,37 @@
 package commands
 
 import (
-	"github.com/cometbft/cometbft/cmd/cometbft/commands"
+	"os"
+
 	"github.com/cometbft/cometbft/libs/cli"
+	"github.com/cometbft/cometbft/libs/log"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
-// NewRootCmd creates a new root command for doidnode. It is called once in the
-// main function.
-func NewRootCmd() *cobra.Command {
-	rootCmd := commands.RootCmd
-	rootCmd.Use = "doidnode"
-	rootCmd.Short = "DOID Network Node"
+var (
+	logger  = log.NewTMLogger(log.NewSyncWriter(os.Stdout))
+	verbose bool
+)
 
-	initRootCmd(rootCmd)
+// RootCmd is the root command for doidnode. It is called once in the main
+// function.
+var RootCmd = &cobra.Command{
+	Use:   "doidnode",
+	Short: "DOID Network Node",
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) (err error) {
+		if viper.GetBool(cli.TraceFlag) {
+			logger = log.NewTracingLogger(logger)
+		}
 
-	return rootCmd
+		logger = logger.With("module", "main")
+		return nil
+	},
 }
 
-func initRootCmd(rootCmd *cobra.Command) {
-	initCmd := commands.InitFilesCmd
-	initCmd.Short = "Initialize DOID Node"
-
-	startCmd := commands.NewRunNodeCmd(NewNode)
-	startCmd.Short = "Run the DOID Node"
-
-	rootCmd.AddCommand(
-		initCmd,
-		startCmd,
-		cli.NewCompletionCmd(rootCmd, true))
+func init() {
+	RootCmd.AddCommand(
+		StartCmd,
+		cli.NewCompletionCmd(RootCmd, true),
+	)
 }

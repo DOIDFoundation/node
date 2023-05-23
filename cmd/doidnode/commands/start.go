@@ -3,42 +3,46 @@ package commands
 import (
 	"fmt"
 
-	"github.com/DOIDFoundation/node/cmd/doidnode/app"
-	cfg "github.com/cometbft/cometbft/config"
-	"github.com/cometbft/cometbft/libs/log"
-	"github.com/cometbft/cometbft/node"
-	nm "github.com/cometbft/cometbft/node"
-	"github.com/cometbft/cometbft/p2p"
-	"github.com/cometbft/cometbft/privval"
-	"github.com/cometbft/cometbft/proxy"
-	cosmosdb "github.com/cosmos/cosmos-db"
+	"github.com/DOIDFoundation/node/node"
+	"github.com/cometbft/cometbft/libs/os"
+	"github.com/spf13/cobra"
 )
 
-func NewNode(config *cfg.Config, logger log.Logger) (*node.Node, error) {
-	db, err := cosmosdb.NewDB("leveldb", cosmosdb.GoLevelDBBackend, config.DBDir())
-	if err != nil {
-		return nil, fmt.Errorf("opening database: %v", err)
-	}
+// addFlags exposes configuration options for starting a node.
+func addFlags(cmd *cobra.Command) {
+}
 
-	app := app.NewKVStoreApplication(&db)
+// StartCmd is the command that allows the CLI to start a node.
+var StartCmd = &cobra.Command{
+	Use:     "start",
+	Aliases: []string{"node", "run"},
+	Short:   "Run the CometBFT node",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		n, err := node.NewNode(logger)
+		if err != nil {
+			return fmt.Errorf("failed to create node: %w", err)
+		}
 
-	pv := privval.LoadFilePV(
-		config.PrivValidatorKeyFile(),
-		config.PrivValidatorStateFile(),
-	)
+		if err := n.Start(); err != nil {
+			return fmt.Errorf("failed to start node: %w", err)
+		}
 
-	nodeKey, err := p2p.LoadNodeKey(config.NodeKeyFile())
-	if err != nil {
-		return nil, fmt.Errorf("failed to load node's key: %v", err)
-	}
+		logger.Info("Started node")
 
-	return nm.NewNode(
-		config,
-		pv,
-		nodeKey,
-		proxy.NewLocalClientCreator(app),
-		nm.DefaultGenesisDocProviderFunc(config),
-		nm.DefaultDBProvider,
-		nm.DefaultMetricsProvider(config.Instrumentation),
-		logger)
+		// Stop upon receiving SIGTERM or CTRL-C.
+		os.TrapSignal(logger, func() {
+			if n.IsRunning() {
+				if err := n.Stop(); err != nil {
+					logger.Error("unable to stop the node", "error", err)
+				}
+			}
+		})
+
+		// Run forever.
+		select {}
+	},
+}
+
+func init() {
+	addFlags(StartCmd)
 }
