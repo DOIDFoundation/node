@@ -6,6 +6,7 @@ import (
 
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
+	ethlog "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
@@ -23,6 +24,19 @@ func NewRPC(logger log.Logger) *RPC {
 }
 
 func (r *RPC) OnStart() error {
+	ethlog.Root().SetHandler(
+		ethlog.FuncHandler(func(record *ethlog.Record) error {
+			fn := r.Logger.Info
+			switch record.Lvl {
+			case ethlog.LvlTrace, ethlog.LvlDebug:
+				fn = r.Logger.Debug
+			case ethlog.LvlError, ethlog.LvlCrit:
+				fn = r.Logger.Error
+			}
+			fn(record.Msg, record.Ctx...)
+			return nil
+		}))
+
 	listenAddr := r.config.ListenAddress
 	// Initialize the server.
 	rpcServer := rpc.NewServer()
