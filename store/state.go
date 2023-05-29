@@ -1,7 +1,7 @@
 package store
 
 import (
-	cmtbytes "github.com/cometbft/cometbft/libs/bytes"
+	"github.com/DOIDFoundation/node/types"
 	cosmosdb "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/iavl"
 )
@@ -32,7 +32,7 @@ func (s *StateStore) Rollback() {
 	s.tree.Rollback()
 }
 
-func (s *StateStore) Commit() (cmtbytes.HexBytes, error) {
+func (s *StateStore) Commit() (types.Hash, error) {
 	hash, _, err := s.tree.SaveVersion()
 	return hash, err
 }

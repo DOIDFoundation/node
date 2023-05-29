@@ -10,7 +10,6 @@ import (
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/DOIDFoundation/node/store"
 	"github.com/DOIDFoundation/node/types"
-	cmtbytes "github.com/cometbft/cometbft/libs/bytes"
 	"github.com/cometbft/cometbft/libs/cli"
 	cosmosdb "github.com/cosmos/cosmos-db"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -23,11 +22,11 @@ type PublicTransactionPoolAPI struct {
 }
 
 type TransactionArgs struct {
-	DOID  string            `json:"DOID"`
-	Owner cmtbytes.HexBytes `json:"owner"`
+	DOID  string     `json:"DOID"`
+	Owner types.Hash `json:"owner"`
 }
 
-func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (cmtbytes.HexBytes, error) {
+func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (types.Hash, error) {
 	if args.Owner == nil {
 		return nil, errors.New("missing args: Owner")
 	}
