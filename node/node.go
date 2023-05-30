@@ -1,12 +1,14 @@
 package node
 
 import (
+	"math/big"
 	"path/filepath"
 
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/doid"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/DOIDFoundation/node/store"
+	"github.com/DOIDFoundation/node/types"
 	cmtdb "github.com/cometbft/cometbft-db"
 	"github.com/cometbft/cometbft/libs/cli"
 	"github.com/cometbft/cometbft/libs/log"
@@ -58,6 +60,19 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 
 	RegisterAPI(node)
 	doid.RegisterAPI(node.chain)
+
+	var block *types.Block = nil
+	headBlockHash := node.blockStore.ReadHeadBlockHash()
+	if headBlockHash != nil {
+		block = node.blockStore.ReadBlock(headBlockHash)
+	}
+	if block == nil {
+		block = types.NewBlockWithHeader(&types.Header{
+			Difficulty: big.NewInt(0),
+			Height:     big.NewInt(0),
+		})
+	}
+	node.chain.SetHead(block)
 
 	return node, nil
 }

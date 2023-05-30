@@ -24,21 +24,21 @@ func NewBlockStore(db cmtdb.DB, logger log.Logger) *BlockStore {
 	}
 }
 
-func (bs *BlockStore) ReadBlock(hash types.Hash, number int64) *types.Block {
-	header := bs.ReadHeader(hash, number)
+func (bs *BlockStore) ReadBlock(hash types.Hash) *types.Block {
+	header := bs.ReadHeader(hash)
 	if header == nil {
 		return nil
 	}
-	data := bs.ReadData(hash, number)
-	if data == nil {
-		return nil
-	}
+	// data := bs.ReadData(hash)
+	// if data == nil {
+	// 	return nil
+	// }
 	return types.NewBlockWithHeader(header)
 }
 
 // ReadHeaderRLP retrieves a block header in its raw RLP database encoding.
-func (bs *BlockStore) ReadHeaderRLP(hash types.Hash, number int64) rlp.RawValue {
-	bz, err := bs.db.Get(headerKey(number))
+func (bs *BlockStore) ReadHeaderRLP(hash types.Hash) rlp.RawValue {
+	bz, err := bs.db.Get(hash)
 	if err != nil {
 		panic(err)
 	}
@@ -50,8 +50,8 @@ func (bs *BlockStore) ReadHeaderRLP(hash types.Hash, number int64) rlp.RawValue 
 }
 
 // ReadHeader retrieves the block header corresponding to the hash.
-func (bs *BlockStore) ReadHeader(hash types.Hash, number int64) *types.Header {
-	data := bs.ReadHeaderRLP(hash, number)
+func (bs *BlockStore) ReadHeader(hash types.Hash) *types.Header {
+	data := bs.ReadHeaderRLP(hash)
 	if len(data) == 0 {
 		return nil
 	}
@@ -64,8 +64,8 @@ func (bs *BlockStore) ReadHeader(hash types.Hash, number int64) *types.Header {
 }
 
 // ReadDataRLP retrieves the block body (transactions and uncles) in RLP encoding.
-func (bs *BlockStore) ReadDataRLP(hash types.Hash, number int64) rlp.RawValue {
-	bz, err := bs.db.Get(dataKey(number))
+func (bs *BlockStore) ReadDataRLP(hash types.Hash) rlp.RawValue {
+	bz, err := bs.db.Get(hash)
 	if err != nil {
 		panic(err)
 	}
@@ -77,8 +77,8 @@ func (bs *BlockStore) ReadDataRLP(hash types.Hash, number int64) rlp.RawValue {
 }
 
 // ReadData retrieves the block body corresponding to the hash.
-func (bs *BlockStore) ReadData(hash types.Hash, number int64) *cmttypes.Data {
-	data := bs.ReadDataRLP(hash, number)
+func (bs *BlockStore) ReadData(hash types.Hash) *cmttypes.Data {
+	data := bs.ReadDataRLP(hash)
 	if len(data) == 0 {
 		return nil
 	}
