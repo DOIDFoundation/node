@@ -81,8 +81,8 @@ func (api *PublicTransactionPoolAPI) GetOwner(params DOIDName) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	fmt.Println(owner, params.DOID)
-	return string(owner), nil
+	ownerAddress := hex.EncodeToString(owner)
+	return ownerAddress, nil
 }
 
 func (api *PublicTransactionPoolAPI) Sign(args TransactionArgs) (string, error) {
