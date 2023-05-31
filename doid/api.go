@@ -1,7 +1,9 @@
 package doid
 
 import (
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"math/big"
 	"path/filepath"
 	"time"
@@ -22,6 +24,13 @@ type PublicTransactionPoolAPI struct {
 }
 
 type TransactionArgs struct {
+	DOID      string     `json:"DOID"`
+	Owner     types.Hash `json:"owner"`
+	Signature types.Hash `json:"signature"`
+	Prv       types.Hash `json:"private"`
+}
+
+type DOIDName struct {
 	DOID  string     `json:"DOID"`
 	Owner types.Hash `json:"owner"`
 }
@@ -30,7 +39,15 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 	if args.Owner == nil {
 		return nil, errors.New("missing args: Owner")
 	}
-	_, err := api.stateStore.Set(crypto.Keccak256([]byte(args.DOID)), args.Owner.Bytes())
+	if args.Signature == nil {
+		return nil, errors.New("missing args: Signature")
+	}
+	nameHash := crypto.Keccak256([]byte(args.DOID))
+
+	if !crypto.VerifySignature(args.Owner.Bytes(), nameHash, args.Signature[:len(args.Signature)-1]) {
+		return nil, errors.New("invalid signature from owner")
+	}
+	_, err := api.stateStore.Set(nameHash, args.Owner.Bytes())
 	if err != nil {
 		return nil, err
 	}
@@ -51,6 +68,30 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 	block := types.NewBlockWithHeader(header)
 	api.chain.SetHead(block)
 	return nil, nil
+}
+
+func (api *PublicTransactionPoolAPI) GetOwner(params DOIDName) (string, error) {
+	owner, err := api.stateStore.Get(crypto.Keccak256([]byte(params.DOID)))
+	if err != nil {
+		return "", err
+	}
+	fmt.Println(owner, params.DOID)
+	return string(owner), nil
+}
+
+func (api *PublicTransactionPoolAPI) Sign(args TransactionArgs) (string, error) {
+	nameHash := crypto.Keccak256([]byte(args.DOID))
+	prv, err := crypto.HexToECDSA(args.Prv.String())
+	if err != nil {
+		return "", errors.New("invalid prv" + err.Error())
+	}
+	sig, err := crypto.Sign(nameHash, prv)
+	fmt.Println(sig)
+	if err != nil {
+		return "", errors.New(err.Error())
+	}
+	sigStr := hex.EncodeToString(sig)
+	return sigStr, nil
 }
 
 func RegisterAPI(chain *core.BlockChain) {
