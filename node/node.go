@@ -3,6 +3,7 @@ package node
 import (
 	"path/filepath"
 
+	"github.com/DOIDFoundation/node/consensus"
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/doid"
 	"github.com/DOIDFoundation/node/rpc"
@@ -25,6 +26,7 @@ type Node struct {
 
 	blockStore *store.BlockStore
 	chain      *core.BlockChain
+	consensus  *consensus.Consensus
 }
 
 // Option sets a parameter for the node.
@@ -32,13 +34,14 @@ type Option func(*Node)
 
 // NewNode returns a new, ready to go, CometBFT Node.
 func NewNode(logger log.Logger, options ...Option) (*Node, error) {
-	chain, err := core.NewBlockChain(logger)
+	homeDir := viper.GetString(cli.HomeFlag)
+	db, err := cmtdb.NewDB("chaindata", cmtdb.GoLevelDBBackend, filepath.Join(homeDir, "data"))
 	if err != nil {
 		return nil, err
 	}
+	blockStore := store.NewBlockStore(db, logger)
 
-	homeDir := viper.GetString(cli.HomeFlag)
-	db, err := cmtdb.NewDB("chaindata", cmtdb.GoLevelDBBackend, filepath.Join(homeDir, "data"))
+	chain, err := core.NewBlockChain(blockStore, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -47,8 +50,9 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 		config: &DefaultConfig,
 		rpc:    rpc.NewRPC(logger),
 
-		blockStore: store.NewBlockStore(db, logger),
+		blockStore: blockStore,
 		chain:      chain,
+		consensus:  consensus.New(chain, logger),
 	}
 	node.BaseService = *service.NewBaseService(logger, "Node", node)
 
@@ -57,7 +61,10 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 	}
 
 	RegisterAPI(node)
-	doid.RegisterAPI(node.chain)
+	if err := doid.RegisterAPI(node.chain); err != nil {
+		db.Close()
+		return nil, err
+	}
 
 	return node, nil
 }
@@ -67,11 +74,17 @@ func (n *Node) OnStart() error {
 	if err := n.rpc.Start(); err != nil {
 		return err
 	}
+	if err := n.consensus.Start(); err != nil {
+		return err
+	}
+
+	n.consensus.CommitWork(n.chain.CurrentBlock())
 	return nil
 }
 
 // OnStop stops the Node. It implements service.Service.
 func (n *Node) OnStop() {
+	n.consensus.Stop()
 	n.rpc.Stop()
 	n.blockStore.Close()
 }

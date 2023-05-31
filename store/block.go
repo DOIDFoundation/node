@@ -8,7 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/DOIDFoundation/node/types"
-	cmtbytes "github.com/cometbft/cometbft/libs/bytes"
 	"github.com/cometbft/cometbft/libs/log"
 	cmttypes "github.com/cometbft/cometbft/types"
 )
@@ -25,21 +24,21 @@ func NewBlockStore(db cmtdb.DB, logger log.Logger) *BlockStore {
 	}
 }
 
-func (bs *BlockStore) ReadBlock(hash cmtbytes.HexBytes, number int64) *types.Block {
-	header := bs.ReadHeader(hash, number)
+func (bs *BlockStore) ReadBlock(hash types.Hash) *types.Block {
+	header := bs.ReadHeader(hash)
 	if header == nil {
 		return nil
 	}
-	data := bs.ReadData(hash, number)
-	if data == nil {
-		return nil
-	}
+	// data := bs.ReadData(hash)
+	// if data == nil {
+	// 	return nil
+	// }
 	return types.NewBlockWithHeader(header)
 }
 
 // ReadHeaderRLP retrieves a block header in its raw RLP database encoding.
-func (bs *BlockStore) ReadHeaderRLP(hash cmtbytes.HexBytes, number int64) rlp.RawValue {
-	bz, err := bs.db.Get(headerKey(number))
+func (bs *BlockStore) ReadHeaderRLP(hash types.Hash) rlp.RawValue {
+	bz, err := bs.db.Get(hash)
 	if err != nil {
 		panic(err)
 	}
@@ -51,8 +50,8 @@ func (bs *BlockStore) ReadHeaderRLP(hash cmtbytes.HexBytes, number int64) rlp.Ra
 }
 
 // ReadHeader retrieves the block header corresponding to the hash.
-func (bs *BlockStore) ReadHeader(hash cmtbytes.HexBytes, number int64) *types.Header {
-	data := bs.ReadHeaderRLP(hash, number)
+func (bs *BlockStore) ReadHeader(hash types.Hash) *types.Header {
+	data := bs.ReadHeaderRLP(hash)
 	if len(data) == 0 {
 		return nil
 	}
@@ -65,8 +64,8 @@ func (bs *BlockStore) ReadHeader(hash cmtbytes.HexBytes, number int64) *types.He
 }
 
 // ReadDataRLP retrieves the block body (transactions and uncles) in RLP encoding.
-func (bs *BlockStore) ReadDataRLP(hash cmtbytes.HexBytes, number int64) rlp.RawValue {
-	bz, err := bs.db.Get(dataKey(number))
+func (bs *BlockStore) ReadDataRLP(hash types.Hash) rlp.RawValue {
+	bz, err := bs.db.Get(hash)
 	if err != nil {
 		panic(err)
 	}
@@ -78,8 +77,8 @@ func (bs *BlockStore) ReadDataRLP(hash cmtbytes.HexBytes, number int64) rlp.RawV
 }
 
 // ReadData retrieves the block body corresponding to the hash.
-func (bs *BlockStore) ReadData(hash cmtbytes.HexBytes, number int64) *cmttypes.Data {
-	data := bs.ReadDataRLP(hash, number)
+func (bs *BlockStore) ReadData(hash types.Hash) *cmttypes.Data {
+	data := bs.ReadDataRLP(hash)
 	if len(data) == 0 {
 		return nil
 	}
@@ -91,15 +90,42 @@ func (bs *BlockStore) ReadData(hash cmtbytes.HexBytes, number int64) *cmttypes.D
 	return body
 }
 
-func (bs *BlockStore) ReadHeadBlockHash() cmtbytes.HexBytes {
+func (bs *BlockStore) WriteBlock(block *types.Block) {
+	// bs.WriteData(block.Data)
+	bs.WriteHeader(block.Header)
+}
+
+// ReadHeader retrieves the block header corresponding to the hash.
+func (bs *BlockStore) WriteHeader(header *types.Header) {
+	var (
+		hash   = header.Hash()
+		height = header.Height.Uint64()
+	)
+
+	// Write the encoded header
+	data, err := rlp.EncodeToBytes(header)
+	if err != nil {
+		bs.logger.Error("failed to RLP encode header", "err", err, "height", height, "hash", hash)
+		return
+	}
+	if err := bs.db.Set(hash, data); err != nil {
+		bs.logger.Error("failed to store header", "err", err, "height", height, "hash", hash)
+	}
+}
+
+func (bs *BlockStore) WriteData(data *cmttypes.Data) {
+	bs.logger.Error("not implemented")
+}
+
+func (bs *BlockStore) ReadHeadBlockHash() types.Hash {
 	data, _ := bs.db.Get(headBlockKey)
 	if len(data) == 0 {
-		return cmtbytes.HexBytes{}
+		return nil
 	}
 	return data
 }
 
-func (bs *BlockStore) WriteHeadBlockHash(hash cmtbytes.HexBytes) {
+func (bs *BlockStore) WriteHeadBlockHash(hash types.Hash) {
 	if err := bs.db.Set(headBlockKey, hash.Bytes()); err != nil {
 		bs.logger.Error("Failed to store last block's hash", "err", err)
 	}

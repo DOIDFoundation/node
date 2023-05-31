@@ -13,7 +13,6 @@ import (
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/DOIDFoundation/node/store"
 	"github.com/DOIDFoundation/node/types"
-	cmtbytes "github.com/cometbft/cometbft/libs/bytes"
 	"github.com/cometbft/cometbft/libs/cli"
 	cosmosdb "github.com/cosmos/cosmos-db"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -26,22 +25,22 @@ type PublicTransactionPoolAPI struct {
 }
 
 type TransactionArgs struct {
-	DOID  string            `json:"DOID"`
-	Owner cmtbytes.HexBytes `json:"owner"`
-	Signature cmtbytes.HexBytes `json:"signature"`
-	Prv cmtbytes.HexBytes `json:"private"`
+	DOID      string     `json:"DOID"`
+	Owner     types.Hash `json:"owner"`
+	Signature types.Hash `json:"signature"`
+	Prv       types.Hash `json:"private"`
 }
 
 type DOIDName struct {
-	DOID  string            `json:"DOID"`
-	Owner cmtbytes.HexBytes `json:"owner"`
+	DOID  string     `json:"DOID"`
+	Owner types.Hash `json:"owner"`
 }
 
-func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (cmtbytes.HexBytes, error) {
+func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (types.Hash, error) {
 	if args.Owner == nil {
 		return nil, errors.New("missing args: Owner")
 	}
-	if args.Signature == nil{
+	if args.Signature == nil {
 		return nil, errors.New("missing args: Signature")
 	}
 
@@ -63,7 +62,7 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (cmtb
 		current = types.NewBlockWithHeader(new(types.Header))
 	}
 	header := types.CopyHeader(current.Header)
-	header.Height = header.Height.Add(header.Height, big.NewInt(1))
+	header.Height.Add(header.Height, big.NewInt(1))
 	header.ParentHash = current.Hash()
 	header.Time = time.Now()
 	hash, err := api.stateStore.Commit()
@@ -78,8 +77,8 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (cmtb
 }
 
 func (api *PublicTransactionPoolAPI) GetOwner(params DOIDName) (string, error) {
-	owner, err :=api.stateStore.Get(crypto.Keccak256([]byte(params.DOID)))
-	if err != nil{
+	owner, err := api.stateStore.Get(crypto.Keccak256([]byte(params.DOID)))
+	if err != nil {
 		return "", err
 	}
 	fmt.Println(owner, params.DOID)
@@ -87,33 +86,34 @@ func (api *PublicTransactionPoolAPI) GetOwner(params DOIDName) (string, error) {
 }
 
 func (api *PublicTransactionPoolAPI) Sign(args TransactionArgs) (string, error) {
-	nameHash :=  crypto.Keccak256([]byte(args.DOID))
+	nameHash := crypto.Keccak256([]byte(args.DOID))
 	prv, err := crypto.HexToECDSA(args.Prv.String())
-	if err!= nil{
-		return "", errors.New("invalid prv"+ err.Error())
+	if err != nil {
+		return "", errors.New("invalid prv" + err.Error())
 	}
 	sig, err := crypto.Sign(nameHash, prv)
 	fmt.Println(sig)
-	if err != nil{
+	if err != nil {
 		return "", errors.New(err.Error())
 	}
 	sigStr := hex.EncodeToString(sig)
 	return sigStr, nil
 }
 
-func RegisterAPI(chain *core.BlockChain) {
+func RegisterAPI(chain *core.BlockChain) error {
 	homeDir := viper.GetString(cli.HomeFlag)
 	db, err := cosmosdb.NewDB("state", cosmosdb.GoLevelDBBackend, filepath.Join(homeDir, "data"))
 	if err != nil {
-		return
+		return err
 	}
 
 	stateStore, err := store.NewStateStore(db)
 	if err != nil {
 		db.Close()
-		return
+		return err
 	}
 
 	api := &PublicTransactionPoolAPI{chain: chain, stateStore: stateStore}
 	rpc.RegisterName("doid", api)
+	return nil
 }

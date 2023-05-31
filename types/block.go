@@ -4,7 +4,6 @@ import (
 	"math/big"
 	"time"
 
-	cmtbytes "github.com/cometbft/cometbft/libs/bytes"
 	cmttypes "github.com/cometbft/cometbft/types"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
@@ -47,7 +46,7 @@ func (b *Block) fillHeader() {
 
 // Hash computes and returns the block hash.
 // If the block is incomplete, block hash is nil for safety.
-func (b *Block) Hash() cmtbytes.HexBytes {
+func (b *Block) Hash() Hash {
 	if b == nil {
 		return nil
 	}
@@ -57,10 +56,10 @@ func (b *Block) Hash() cmtbytes.HexBytes {
 }
 
 type Header struct {
-	ParentHash cmtbytes.HexBytes   `json:"parentHash"       gencodec:"required"`
+	ParentHash Hash                `json:"parentHash"       gencodec:"required"`
 	Miner      cmttypes.Address    `json:"miner"            gencodec:"required"`
-	Root       cmtbytes.HexBytes   `json:"stateRoot"        gencodec:"required"`
-	TxHash     cmtbytes.HexBytes   `json:"transactionsRoot" gencodec:"required"`
+	Root       Hash                `json:"stateRoot"        gencodec:"required"`
+	TxHash     Hash                `json:"transactionsRoot" gencodec:"required"`
 	Difficulty *big.Int            `json:"difficulty"       gencodec:"required"`
 	Height     *big.Int            `json:"height"           gencodec:"required"`
 	Time       time.Time           `json:"timestamp"        gencodec:"required"`
@@ -68,6 +67,6 @@ type Header struct {
 	Nonce      ethtypes.BlockNonce `json:"nonce"`
 }
 
-func (h *Header) Hash() cmtbytes.HexBytes {
+func (h *Header) Hash() Hash {
 	return rlpHash(h)
 }
