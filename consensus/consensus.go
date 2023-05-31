@@ -112,7 +112,7 @@ func (c *Consensus) mine(id int, seed uint64, abort chan struct{}, found chan *t
 	)
 
 	header = block.Header
-	header.Height = header.Height.Add(header.Height, big.NewInt(1))
+	header.Height.Add(header.Height, big.NewInt(1))
 	header.ParentHash = block.Hash()
 	header.Time = time.Now()
 

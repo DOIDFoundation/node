@@ -56,7 +56,7 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 		current = types.NewBlockWithHeader(new(types.Header))
 	}
 	header := types.CopyHeader(current.Header)
-	header.Height = header.Height.Add(header.Height, big.NewInt(1))
+	header.Height.Add(header.Height, big.NewInt(1))
 	header.ParentHash = current.Hash()
 	header.Time = time.Now()
 	hash, err := api.stateStore.Commit()
