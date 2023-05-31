@@ -1,6 +1,7 @@
 package doid
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -42,12 +43,17 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 	if args.Signature == nil {
 		return nil, errors.New("missing args: Signature")
 	}
-	nameHash := crypto.Keccak256([]byte(args.DOID))
 
-	if !crypto.VerifySignature(args.Owner.Bytes(), nameHash, args.Signature[:len(args.Signature)-1]) {
+	nameHash :=  crypto.Keccak256([]byte(args.DOID))
+	recovered,err := crypto.SigToPub(nameHash, args.Signature)
+	if err != nil{
+		return nil, errors.New("invalid args: Signature")
+	}
+	recoveredAddr := crypto.PubkeyToAddress(*recovered)
+	if (!bytes.Equal(recoveredAddr.Bytes() , args.Owner.Bytes())){
 		return nil, errors.New("invalid signature from owner")
 	}
-	_, err := api.stateStore.Set(nameHash, args.Owner.Bytes())
+	_, err = api.stateStore.Set(nameHash, args.Owner.Bytes())
 	if err != nil {
 		return nil, err
 	}
@@ -75,8 +81,8 @@ func (api *PublicTransactionPoolAPI) GetOwner(params DOIDName) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	fmt.Println(owner, params.DOID)
-	return string(owner), nil
+	ownerAddress := hex.EncodeToString(owner)
+	return ownerAddress, nil
 }
 
 func (api *PublicTransactionPoolAPI) Sign(args TransactionArgs) (string, error) {
