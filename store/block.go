@@ -90,6 +90,33 @@ func (bs *BlockStore) ReadData(hash types.Hash) *cmttypes.Data {
 	return body
 }
 
+func (bs *BlockStore) WriteBlock(block *types.Block) {
+	// bs.WriteData(block.Data)
+	bs.WriteHeader(block.Header)
+}
+
+// ReadHeader retrieves the block header corresponding to the hash.
+func (bs *BlockStore) WriteHeader(header *types.Header) {
+	var (
+		hash   = header.Hash()
+		height = header.Height.Uint64()
+	)
+
+	// Write the encoded header
+	data, err := rlp.EncodeToBytes(header)
+	if err != nil {
+		bs.logger.Error("failed to RLP encode header", "err", err, "height", height, "hash", hash)
+		return
+	}
+	if err := bs.db.Set(hash, data); err != nil {
+		bs.logger.Error("failed to store header", "err", err, "height", height, "hash", hash)
+	}
+}
+
+func (bs *BlockStore) WriteData(data *cmttypes.Data) {
+	bs.logger.Error("not implemented")
+}
+
 func (bs *BlockStore) ReadHeadBlockHash() types.Hash {
 	data, _ := bs.db.Get(headBlockKey)
 	if len(data) == 0 {

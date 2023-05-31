@@ -94,19 +94,20 @@ func (api *PublicTransactionPoolAPI) Sign(args TransactionArgs) (string, error) 
 	return sigStr, nil
 }
 
-func RegisterAPI(chain *core.BlockChain) {
+func RegisterAPI(chain *core.BlockChain) error {
 	homeDir := viper.GetString(cli.HomeFlag)
 	db, err := cosmosdb.NewDB("state", cosmosdb.GoLevelDBBackend, filepath.Join(homeDir, "data"))
 	if err != nil {
-		return
+		return err
 	}
 
 	stateStore, err := store.NewStateStore(db)
 	if err != nil {
 		db.Close()
-		return
+		return err
 	}
 
 	api := &PublicTransactionPoolAPI{chain: chain, stateStore: stateStore}
 	rpc.RegisterName("doid", api)
+	return nil
 }

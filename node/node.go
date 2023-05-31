@@ -1,7 +1,6 @@
 package node
 
 import (
-	"math/big"
 	"path/filepath"
 
 	"github.com/DOIDFoundation/node/consensus"
@@ -9,7 +8,6 @@ import (
 	"github.com/DOIDFoundation/node/doid"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/DOIDFoundation/node/store"
-	"github.com/DOIDFoundation/node/types"
 	cmtdb "github.com/cometbft/cometbft-db"
 	"github.com/cometbft/cometbft/libs/cli"
 	"github.com/cometbft/cometbft/libs/log"
@@ -36,13 +34,14 @@ type Option func(*Node)
 
 // NewNode returns a new, ready to go, CometBFT Node.
 func NewNode(logger log.Logger, options ...Option) (*Node, error) {
-	chain, err := core.NewBlockChain(logger)
+	homeDir := viper.GetString(cli.HomeFlag)
+	db, err := cmtdb.NewDB("chaindata", cmtdb.GoLevelDBBackend, filepath.Join(homeDir, "data"))
 	if err != nil {
 		return nil, err
 	}
+	blockStore := store.NewBlockStore(db, logger)
 
-	homeDir := viper.GetString(cli.HomeFlag)
-	db, err := cmtdb.NewDB("chaindata", cmtdb.GoLevelDBBackend, filepath.Join(homeDir, "data"))
+	chain, err := core.NewBlockChain(blockStore, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +50,7 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 		config: &DefaultConfig,
 		rpc:    rpc.NewRPC(logger),
 
-		blockStore: store.NewBlockStore(db, logger),
+		blockStore: blockStore,
 		chain:      chain,
 		consensus:  consensus.New(chain, logger),
 	}
@@ -62,20 +61,10 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 	}
 
 	RegisterAPI(node)
-	doid.RegisterAPI(node.chain)
-
-	var block *types.Block = nil
-	headBlockHash := node.blockStore.ReadHeadBlockHash()
-	if headBlockHash != nil {
-		block = node.blockStore.ReadBlock(headBlockHash)
+	if err := doid.RegisterAPI(node.chain); err != nil {
+		db.Close()
+		return nil, err
 	}
-	if block == nil {
-		block = types.NewBlockWithHeader(&types.Header{
-			Difficulty: big.NewInt(1),
-			Height:     big.NewInt(0),
-		})
-	}
-	node.chain.SetHead(block)
 
 	return node, nil
 }
