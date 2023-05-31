@@ -15,6 +15,7 @@ var APIs []rpc.API // List of APIs currently provided by the node
 type RPC struct {
 	service.BaseService
 	config *Config
+	server *http.Server
 }
 
 func NewRPC(logger log.Logger) *RPC {
@@ -48,7 +49,7 @@ func (r *RPC) OnStart() error {
 		}
 	}
 
-	server := &http.Server{
+	r.server = &http.Server{
 		Handler:           rpcServer,
 		ReadTimeout:       r.config.HTTPTimeouts.ReadTimeout,
 		ReadHeaderTimeout: r.config.HTTPTimeouts.ReadHeaderTimeout,
@@ -63,11 +64,12 @@ func (r *RPC) OnStart() error {
 		return err
 	}
 	r.Logger.Info("listening", "listenAddr", listenAddr)
-	go server.Serve(listener)
+	go r.server.Serve(listener)
 	return nil
 }
 
 func (r *RPC) OnStop() {
+	r.server.Close()
 }
 
 func RegisterName(name string, receiver interface{}) {
