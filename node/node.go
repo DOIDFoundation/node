@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"path/filepath"
 
+	"github.com/DOIDFoundation/node/consensus"
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/doid"
 	"github.com/DOIDFoundation/node/rpc"
@@ -27,6 +28,7 @@ type Node struct {
 
 	blockStore *store.BlockStore
 	chain      *core.BlockChain
+	consensus  *consensus.Consensus
 }
 
 // Option sets a parameter for the node.
@@ -51,6 +53,7 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 
 		blockStore: store.NewBlockStore(db, logger),
 		chain:      chain,
+		consensus:  consensus.New(chain, logger),
 	}
 	node.BaseService = *service.NewBaseService(logger, "Node", node)
 
@@ -68,7 +71,7 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 	}
 	if block == nil {
 		block = types.NewBlockWithHeader(&types.Header{
-			Difficulty: big.NewInt(0),
+			Difficulty: big.NewInt(1),
 			Height:     big.NewInt(0),
 		})
 	}
@@ -82,11 +85,17 @@ func (n *Node) OnStart() error {
 	if err := n.rpc.Start(); err != nil {
 		return err
 	}
+	if err := n.consensus.Start(); err != nil {
+		return err
+	}
+
+	n.consensus.CommitWork(n.chain.CurrentBlock())
 	return nil
 }
 
 // OnStop stops the Node. It implements service.Service.
 func (n *Node) OnStop() {
+	n.consensus.Stop()
 	n.rpc.Stop()
 	n.blockStore.Close()
 }

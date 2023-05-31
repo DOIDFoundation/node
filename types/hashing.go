@@ -17,11 +17,12 @@ var hasherPool = sync.Pool{
 }
 
 // rlpHash encodes x and hashes the encoded bytes.
-func rlpHash(x interface{}) (h Hash) {
+func rlpHash(x interface{}) Hash {
 	sha := hasherPool.Get().(crypto.KeccakState)
 	defer hasherPool.Put(sha)
 	sha.Reset()
 	rlp.Encode(sha, x)
+	var h [32]byte
 	sha.Read(h[:])
-	return h
+	return h[:]
 }

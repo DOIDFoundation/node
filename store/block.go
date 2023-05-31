@@ -93,7 +93,7 @@ func (bs *BlockStore) ReadData(hash types.Hash) *cmttypes.Data {
 func (bs *BlockStore) ReadHeadBlockHash() types.Hash {
 	data, _ := bs.db.Get(headBlockKey)
 	if len(data) == 0 {
-		return types.Hash{}
+		return nil
 	}
 	return data
 }
