@@ -29,7 +29,7 @@ func NewBlockChain(blockStore *store.BlockStore, logger log.Logger) (*BlockChain
 	}
 	if block == nil {
 		block = types.NewBlockWithHeader(&types.Header{
-			Difficulty: big.NewInt(1),
+			Difficulty: big.NewInt(0x1000000),
 			Height:     big.NewInt(0),
 		})
 	}

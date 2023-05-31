@@ -77,8 +77,6 @@ func (n *Node) OnStart() error {
 	if err := n.consensus.Start(); err != nil {
 		return err
 	}
-
-	n.consensus.CommitWork(n.chain.CurrentBlock())
 	return nil
 }
 
