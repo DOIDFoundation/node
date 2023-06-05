@@ -8,14 +8,20 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
-type Block struct {
-	Header *Header       `json:"header"`
-	Data   cmttypes.Data `json:"data"`
+type Address = cmttypes.Address
+type Data = cmttypes.Data
+type BlockNonce = ethtypes.BlockNonce
 
-	// These fields are used by package eth to track
-	// inter-peer block relay.
-	ReceivedAt   time.Time
-	ReceivedFrom interface{}
+var EncodeNonce = ethtypes.EncodeNonce
+
+type Block struct {
+	Header *Header `json:"header"`
+	Data   *Data   `json:"data"`
+
+	// // These fields are used by package eth to track
+	// // inter-peer block relay.
+	// ReceivedAt   time.Time
+	// ReceivedFrom interface{}
 }
 
 func NewBlockWithHeader(header *Header) *Block {
@@ -56,15 +62,15 @@ func (b *Block) Hash() Hash {
 }
 
 type Header struct {
-	ParentHash Hash                `json:"parentHash"       gencodec:"required"`
-	Miner      cmttypes.Address    `json:"miner"            gencodec:"required"`
-	Root       Hash                `json:"stateRoot"        gencodec:"required"`
-	TxHash     Hash                `json:"transactionsRoot" gencodec:"required"`
-	Difficulty *big.Int            `json:"difficulty"       gencodec:"required"`
-	Height     *big.Int            `json:"height"           gencodec:"required"`
-	Time       time.Time           `json:"timestamp"        gencodec:"required"`
-	Extra      []byte              `json:"extraData"        gencodec:"required"`
-	Nonce      ethtypes.BlockNonce `json:"nonce"`
+	ParentHash Hash       `json:"parentHash"       gencodec:"required"`
+	Miner      Address    `json:"miner"            gencodec:"required"`
+	Root       Hash       `json:"stateRoot"        gencodec:"required"`
+	TxHash     Hash       `json:"transactionsRoot" gencodec:"required"`
+	Difficulty *big.Int   `json:"difficulty"       gencodec:"required"`
+	Height     *big.Int   `json:"height"           gencodec:"required"`
+	Time       time.Time  `json:"timestamp"        gencodec:"required"`
+	Extra      []byte     `json:"extraData"        gencodec:"required"`
+	Nonce      BlockNonce `json:"nonce"`
 }
 
 func (h *Header) Hash() Hash {
