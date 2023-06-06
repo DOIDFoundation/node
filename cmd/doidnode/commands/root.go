@@ -32,6 +32,7 @@ var RootCmd = &cobra.Command{
 func init() {
 	RootCmd.AddCommand(
 		StartCmd,
+		VersionCmd,
 		cli.NewCompletionCmd(RootCmd, true),
 	)
 }

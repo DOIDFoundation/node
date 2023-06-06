@@ -27,3 +27,5 @@ profile.cov
 
 # VS Code
 .vscode
+
+build
