@@ -43,3 +43,7 @@ func (tx *EncodedTx) Decode(val types.TypedTx) error {
 func (tx *EncodedTx) ToBytes() ([]byte, error) {
 	return rlp.EncodeToBytes(tx)
 }
+
+func (tx *EncodedTx) ToTx() (types.Tx, error) {
+	return rlp.EncodeToBytes(tx)
+}
