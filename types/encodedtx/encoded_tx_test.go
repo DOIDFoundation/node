@@ -1,9 +1,10 @@
-package tx_test
+package encodedtx_test
 
 import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/DOIDFoundation/node/types/encodedtx"
 	"github.com/DOIDFoundation/node/types/tx"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/stretchr/testify/assert"
@@ -11,14 +12,14 @@ import (
 
 func TestDecodeEmptyBytes(t *testing.T) {
 	input := []byte{0x80}
-	txe, err := tx.FromBytes(input)
+	txe, err := encodedtx.FromBytes(input)
 	assert.Error(t, err)
 	assert.Nil(t, txe)
 }
 
 func TestEmptyTx(t *testing.T) {
 	// encode
-	txe := &tx.EncodedTx{}
+	txe := &encodedtx.EncodedTx{}
 	txb, err := txe.ToBytes()
 	if !assert.NoError(t, err) {
 		t.FailNow()
@@ -27,14 +28,14 @@ func TestEmptyTx(t *testing.T) {
 	assert.Equal(t, should, txb, "encoded RLP mismatch")
 
 	// decode
-	txe, err = tx.FromBytes(should)
+	txe, err = encodedtx.FromBytes(should)
 	assert.NoError(t, err)
 	assert.NotNil(t, txe)
 }
 
 func TestTxRegister(t *testing.T) {
 	// encode
-	txe, err := tx.Encode(&tx.Register{DOID: "doid"})
+	txe, err := encodedtx.FromTypedTx(&tx.Register{DOID: "doid"})
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
@@ -46,7 +47,7 @@ func TestTxRegister(t *testing.T) {
 	assert.Equal(t, should, txb, "encoded RLP mismatch")
 
 	// decode
-	txe, err = tx.FromBytes(should)
+	txe, err = encodedtx.FromBytes(should)
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}

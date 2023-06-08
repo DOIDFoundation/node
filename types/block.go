@@ -3,16 +3,7 @@ package types
 import (
 	"math/big"
 	"time"
-
-	cmttypes "github.com/cometbft/cometbft/types"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
-
-type Address = cmttypes.Address
-type Data = cmttypes.Data
-type BlockNonce = ethtypes.BlockNonce
-
-var EncodeNonce = ethtypes.EncodeNonce
 
 type Block struct {
 	Header *Header `json:"header"`
