@@ -1,4 +1,4 @@
-package node
+package network
 
 import "github.com/DOIDFoundation/node/rpc"
 
@@ -16,5 +16,5 @@ func (api *API) Status() Status {
 
 func RegisterAPI(node *Node) {
 	api := &API{node: node}
-	rpc.RegisterName("node", api)
+	rpc.RegisterName("network", api)
 }

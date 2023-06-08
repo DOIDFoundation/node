@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-var APIs []rpc.API // List of APIs currently provided by the node
+var APIs []rpc.API // List of APIs currently provided by the network
 
 type RPC struct {
 	service.BaseService
