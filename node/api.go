@@ -1,9 +1,9 @@
-package network
+package node
 
 import "github.com/DOIDFoundation/node/rpc"
 
 type API struct {
-	node *Network
+	node *Node
 }
 
 type Status struct {
@@ -14,7 +14,7 @@ func (api *API) Status() Status {
 	return Status{IsRunning: api.node.IsRunning()}
 }
 
-func RegisterAPI(node *Network) {
+func RegisterAPI(node *Node) {
 	api := &API{node: node}
-	rpc.RegisterName("network", api)
+	rpc.RegisterName("node", api)
 }

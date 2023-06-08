@@ -21,10 +21,8 @@ func (v myerror) serialize() []byte {
 	return result.Bytes()
 }
 
-func (v *myerror) deserialize(d []byte) {
+func (v *myerror) deserialize(d []byte) error {
 	decoder := gob.NewDecoder(bytes.NewReader(d))
 	err := decoder.Decode(v)
-	if err != nil {
-		logger.Debug(err.Error())
-	}
+	return err
 }

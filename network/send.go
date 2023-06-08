@@ -2,12 +2,13 @@ package network
 
 import (
 	"bufio"
+
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 type Send struct {
-	node *Node
+	node *Network
 }
 
 func (s Send) SendSignOutToPeers() {
@@ -27,7 +28,7 @@ func (s Send) SendTestToPeers() {
 
 	for _, v := range peerPool {
 		ss, _ := v.MarshalJSON()
-		logger.Info(string(ss))
+		s.node.Logger.Info(string(ss))
 
 		s.SendMessage(v, data)
 	}
@@ -35,12 +36,12 @@ func (s Send) SendTestToPeers() {
 
 func (s Send) SendMessage(peer peer.AddrInfo, data []byte) {
 	if err := s.node.localHost.Connect(ctx, peer); err != nil {
-		logger.Error("Connection failed:", err)
+		s.node.Logger.Error("Connection failed:", err)
 	}
 
 	stream, err := s.node.localHost.NewStream(ctx, peer.ID, protocol.ID(ProtocolID))
 	if err != nil {
-		logger.Info("Stream open failed", err)
+		s.node.Logger.Info("Stream open failed", err)
 	} else {
 		cmd, _ := splitMessage(data)
 
@@ -48,16 +49,16 @@ func (s Send) SendMessage(peer peer.AddrInfo, data []byte) {
 
 		_, err := rw.Write(data)
 		if err != nil {
-			logger.Debug(err.Error())
+			s.node.Logger.Debug(err.Error())
 		}
 		err = rw.Flush()
 		if err != nil {
-			logger.Debug(err.Error())
+			s.node.Logger.Debug(err.Error())
 		}
 		err = stream.Close()
 		if err != nil {
-			logger.Debug(err.Error())
+			s.node.Logger.Debug(err.Error())
 		}
-		logger.Debug("send cmd:%s to peer:%v", cmd, peer)
+		s.node.Logger.Debug("send cmd:%s to peer:%v", cmd, peer)
 	}
 }

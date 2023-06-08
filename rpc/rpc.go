@@ -8,6 +8,7 @@ import (
 	"github.com/cometbft/cometbft/libs/service"
 	ethlog "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/spf13/viper"
 )
 
 var APIs []rpc.API // List of APIs currently provided by the network
@@ -38,7 +39,7 @@ func (r *RPC) OnStart() error {
 			return nil
 		}))
 
-	listenAddr := r.config.ListenAddress
+	listenAddr := viper.GetString("rpc.addr")
 	// Initialize the server.
 	rpcServer := rpc.NewServer()
 

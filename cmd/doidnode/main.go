@@ -10,9 +10,6 @@ import (
 )
 
 func main() {
-	commands.RootCmd.PersistentFlags().StringP("listen", "l", "", "listenAddr")
-	commands.RootCmd.PersistentFlags().StringP("rendezvous", "r", "", "rendezvous")
-
 	cmd := cli.PrepareBaseCmd(commands.RootCmd, "DOID", os.ExpandEnv(filepath.Join("$HOME", ".doidnode")))
 
 	if err := cmd.Execute(); err != nil {
