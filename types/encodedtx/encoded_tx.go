@@ -1,22 +1,18 @@
-package tx
+package encodedtx
 
 import (
 	"errors"
 
-	cmttypes "github.com/cometbft/cometbft/types"
+	"github.com/DOIDFoundation/node/types"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
-type Tx interface {
-	Type() Type
-}
-
 type EncodedTx struct {
-	Type Type
+	Type types.TxType
 	Data []byte
 }
 
-func Encode(val Tx) (*EncodedTx, error) {
+func FromTypedTx(val types.TypedTx) (*EncodedTx, error) {
 	data, err := rlp.EncodeToBytes(val)
 	if err != nil {
 		return nil, err
@@ -33,7 +29,11 @@ func FromBytes(b []byte) (*EncodedTx, error) {
 	return tx, nil
 }
 
-func (tx *EncodedTx) Decode(val Tx) error {
+func FromTx(b types.Tx) (*EncodedTx, error) {
+	return FromBytes(b)
+}
+
+func (tx *EncodedTx) Decode(val types.TypedTx) error {
 	if tx.Type != val.Type() {
 		return errors.New("type mismatch")
 	}
@@ -42,16 +42,4 @@ func (tx *EncodedTx) Decode(val Tx) error {
 
 func (tx *EncodedTx) ToBytes() ([]byte, error) {
 	return rlp.EncodeToBytes(tx)
-}
-
-func DecodeTx(b cmttypes.Tx, val Tx) error {
-	tx, err := FromBytes(b)
-	if err != nil {
-		return err
-	}
-	err = tx.Decode(val)
-	if err != nil {
-		return err
-	}
-	return nil
 }
