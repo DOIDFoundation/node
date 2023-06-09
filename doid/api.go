@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/DOIDFoundation/node/core"
+	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/DOIDFoundation/node/store"
 	"github.com/DOIDFoundation/node/types"
-	"github.com/cometbft/cometbft/libs/cli"
 	cosmosdb "github.com/cosmos/cosmos-db"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/spf13/viper"
@@ -44,13 +44,13 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 		return nil, errors.New("missing args: Signature")
 	}
 
-	nameHash :=  crypto.Keccak256([]byte(args.DOID))
-	recovered,err := crypto.SigToPub(nameHash, args.Signature)
-	if err != nil{
+	nameHash := crypto.Keccak256([]byte(args.DOID))
+	recovered, err := crypto.SigToPub(nameHash, args.Signature)
+	if err != nil {
 		return nil, errors.New("invalid args: Signature")
 	}
 	recoveredAddr := crypto.PubkeyToAddress(*recovered)
-	if (!bytes.Equal(recoveredAddr.Bytes() , args.Owner.Bytes())){
+	if !bytes.Equal(recoveredAddr.Bytes(), args.Owner.Bytes()) {
 		return nil, errors.New("invalid signature from owner")
 	}
 	_, err = api.stateStore.Set(nameHash, args.Owner.Bytes())
@@ -101,7 +101,7 @@ func (api *PublicTransactionPoolAPI) Sign(args TransactionArgs) (string, error) 
 }
 
 func RegisterAPI(chain *core.BlockChain) error {
-	homeDir := viper.GetString(cli.HomeFlag)
+	homeDir := viper.GetString(flags.Home)
 	db, err := cosmosdb.NewDB("state", cosmosdb.GoLevelDBBackend, filepath.Join(homeDir, "data"))
 	if err != nil {
 		return err

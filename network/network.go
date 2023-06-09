@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DOIDFoundation/node/flags"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
 	"github.com/libp2p/go-libp2p"
@@ -42,7 +43,7 @@ func NewNetwork(logger log.Logger) *Network {
 	network := &Network{
 		config: &DefaultConfig,
 	}
-	network.BaseService = *service.NewBaseService(logger, "Network", network)
+	network.BaseService = *service.NewBaseService(logger.With("module", "network"), "Network", network)
 
 	return network
 }
@@ -50,7 +51,7 @@ func NewNetwork(logger log.Logger) *Network {
 // OnStart starts the Network. It implements service.Service.
 func (n *Network) OnStart() error {
 	var opts []libp2p.Option
-	n.config.ListenAddresses = viper.GetString("p2p.addr")
+	n.config.ListenAddresses = viper.GetString(flags.P2P_Addr)
 	n.config.RendezvousString = viper.GetString("rendezvous")
 	m1, err := multiaddr.NewMultiaddr(n.config.ListenAddresses)
 	if err != nil {
@@ -63,7 +64,7 @@ func (n *Network) OnStart() error {
 		return err
 	}
 
-	n.Logger.Info("Host created. We are:", localHost.ID(), localHost.Addrs())
+	n.Logger.Info("Host created. We are:", "id", localHost.ID(), "addrs", localHost.Addrs())
 	//n.Logger.Info(host.Addrs())
 
 	// Set a function as stream handler. This function is called when a peer
@@ -90,6 +91,11 @@ func (n *Network) OnStart() error {
 	if len(n.config.BootstrapPeers) == 0 {
 		n.config.BootstrapPeers = dht.DefaultBootstrapPeers
 	}
+	go n.Bootstrap(localHost, kademliaDHT)
+	return nil
+}
+
+func (n *Network) Bootstrap(localHost host.Host, kademliaDHT *dht.IpfsDHT) {
 	// Let's connect to the bootstrap nodes first. They will tell us about the
 	// other nodes in the network.
 	var wg sync.WaitGroup
@@ -99,9 +105,9 @@ func (n *Network) OnStart() error {
 		go func() {
 			defer wg.Done()
 			if err := localHost.Connect(ctx, *peerinfo2); err != nil {
-				n.Logger.Error(err.Error())
+				n.Logger.Error("Failed to connect", "peer", *peerinfo2, "err", err)
 			} else {
-				n.Logger.Info("Connection established with bootstrap network:", *peerinfo2)
+				n.Logger.Info("Connection established with bootstrap network:", "peer", *peerinfo2)
 			}
 		}()
 	}
@@ -121,7 +127,6 @@ func (n *Network) OnStart() error {
 
 	go n.findP2PPeer()
 	go n.sendInfo()
-	return nil
 }
 
 func (n *Network) findP2PPeer() {

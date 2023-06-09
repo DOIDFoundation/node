@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/DOIDFoundation/node/flags"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
 	ethlog "github.com/ethereum/go-ethereum/log"
@@ -21,7 +22,7 @@ type RPC struct {
 
 func NewRPC(logger log.Logger) *RPC {
 	rpc := &RPC{config: &DefaultConfig}
-	rpc.BaseService = *service.NewBaseService(logger, "RPC", rpc)
+	rpc.BaseService = *service.NewBaseService(logger.With("module", "rpc"), "RPC", rpc)
 	return rpc
 }
 
@@ -39,7 +40,7 @@ func (r *RPC) OnStart() error {
 			return nil
 		}))
 
-	listenAddr := viper.GetString("rpc.addr")
+	listenAddr := viper.GetString(flags.RPC_Addr)
 	// Initialize the server.
 	rpcServer := rpc.NewServer()
 

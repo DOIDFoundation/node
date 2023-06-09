@@ -6,11 +6,11 @@ import (
 	"github.com/DOIDFoundation/node/consensus"
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/doid"
+	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/network"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/DOIDFoundation/node/store"
 	cmtdb "github.com/cometbft/cometbft-db"
-	"github.com/cometbft/cometbft/libs/cli"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
 	"github.com/spf13/viper"
@@ -36,7 +36,7 @@ type Option func(*Node)
 
 // NewNode returns a new, ready to go, CometBFT Node.
 func NewNode(logger log.Logger, options ...Option) (*Node, error) {
-	homeDir := viper.GetString(cli.HomeFlag)
+	homeDir := viper.GetString(flags.Home)
 	db, err := cmtdb.NewDB("chaindata", cmtdb.GoLevelDBBackend, filepath.Join(homeDir, "data"))
 	if err != nil {
 		return nil, err
@@ -57,7 +57,7 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 		consensus:  consensus.New(chain, logger),
 		network:    network.NewNetwork(logger),
 	}
-	node.BaseService = *service.NewBaseService(logger, "Node", node)
+	node.BaseService = *service.NewBaseService(logger.With("module", "node"), "Node", node)
 
 	for _, option := range options {
 		option(node)
