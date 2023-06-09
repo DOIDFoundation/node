@@ -6,6 +6,7 @@ import (
 	"github.com/DOIDFoundation/node/consensus"
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/doid"
+	"github.com/DOIDFoundation/node/mempool"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/DOIDFoundation/node/store"
 	cmtdb "github.com/cometbft/cometbft-db"
@@ -24,6 +25,7 @@ type Node struct {
 	config *Config
 	rpc    *rpc.RPC
 
+	mempool 	*mempool.Mempool
 	blockStore *store.BlockStore
 	chain      *core.BlockChain
 	consensus  *consensus.Consensus
@@ -46,10 +48,13 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 		return nil, err
 	}
 
+	mp := mempool.NewMempool(logger)
+
 	node := &Node{
 		config: &DefaultConfig,
 		rpc:    rpc.NewRPC(logger),
 
+		mempool: mp,
 		blockStore: blockStore,
 		chain:      chain,
 		consensus:  consensus.New(chain, logger),
@@ -61,7 +66,7 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 	}
 
 	RegisterAPI(node)
-	if err := doid.RegisterAPI(node.chain); err != nil {
+	if err := doid.RegisterAPI(node); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -86,3 +91,12 @@ func (n *Node) OnStop() {
 	n.rpc.Stop()
 	n.blockStore.Close()
 }
+
+func (n *Node) Mempool() *mempool.Mempool{
+	return n.mempool
+}
+
+func (n *Node) Chain() *core.BlockChain{
+	return n.chain
+}
+
