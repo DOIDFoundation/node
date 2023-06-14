@@ -6,6 +6,7 @@ import (
 
 	"github.com/DOIDFoundation/node/types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -71,6 +72,5 @@ func TestBlock(t *testing.T) {
 	b := types.NewBlockWithHeader(h)
 	assert.Nil(t, b.Header.TxHash)
 	b.Hash()
-	assert.NotNil(t, b.Header.TxHash)
-	assert.NotEmpty(t, b.Header.TxHash)
+	assert.Equal(t, hexutil.MustDecode("0xE3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"), b.Header.TxHash.Bytes())
 }

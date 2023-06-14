@@ -57,7 +57,7 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 	if err != nil {
 		return nil, err
 	}
-	current := api.chain.CurrentBlock()
+	current := api.chain.LatestBlock()
 	if current == nil {
 		current = types.NewBlockWithHeader(new(types.Header))
 	}
