@@ -10,6 +10,7 @@ import (
 
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/store"
+	"github.com/DOIDFoundation/node/transactor"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/cometbft/cometbft/libs/log"
 	cosmosdb "github.com/cosmos/cosmos-db"
@@ -139,18 +140,13 @@ func (bc *BlockChain) mutableState() (*iavl.MutableTree, error) {
 	return tree, err
 }
 
-func applyTxs(tree *iavl.MutableTree, txs types.Txs) (types.Hash, error) {
-	// @todo apply txs to working tree
-	return tree.WorkingHash()
-}
-
 func (bc *BlockChain) Simulate(txs types.Txs) (types.Hash, error) {
 	state, err := bc.mutableState()
 	if err != nil {
 		return nil, err
 	}
 	defer state.Rollback()
-	return applyTxs(state, txs)
+	return transactor.ApplyTxs(state, txs)
 }
 
 func (bc *BlockChain) ApplyBlock(block *types.Block) error {
@@ -165,7 +161,7 @@ func (bc *BlockChain) ApplyBlock(block *types.Block) error {
 		return err
 	}
 
-	hash, err := applyTxs(state, block.Data.Txs)
+	hash, err := transactor.ApplyTxs(state, block.Data.Txs)
 	if err != nil {
 		return err
 	}
