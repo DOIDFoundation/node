@@ -25,7 +25,7 @@ func TestNewBlockchain(t *testing.T) {
 	assert.Zero(t, chain.LatestBlock().Header.Height.Cmp(common.Big0))
 	assert.NotZero(t, chain.LatestBlock().Header.Root)
 	assert.Zero(t, chain.LatestBlock().Header.ParentHash)
-	assert.Zero(t, chain.LatestBlock().Header.TxHash)
+	assert.NotZero(t, chain.LatestBlock().Header.TxHash)
 }
 
 func TestSimulate(t *testing.T) {
@@ -46,7 +46,7 @@ func TestApplyBlock(t *testing.T) {
 	header.Height.Add(header.Height, common.Big1)
 	header.Root = hash
 	newBlock := types.NewBlockWithHeader(header)
-	newBlock.Data = &types.Data{Txs: txs}
+	newBlock.Data = types.Data{Txs: txs}
 	assert.NoError(t, chain.ApplyBlock(newBlock))
 	assert.Zero(t, chain.LatestBlock().Header.Height.Cmp(common.Big1))
 	assert.Equal(t, block.Hash(), newBlock.Header.ParentHash)
