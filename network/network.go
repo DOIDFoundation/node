@@ -12,6 +12,7 @@ import (
 	"github.com/cometbft/cometbft/libs/service"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -33,6 +34,8 @@ type Network struct {
 
 	localHost        host.Host
 	routingDiscovery *drouting.RoutingDiscovery
+	pubsub           *pubsub.PubSub
+	topicBlock       *pubsub.Topic
 }
 
 // Option sets a parameter for the network.
@@ -91,8 +94,72 @@ func (n *Network) OnStart() error {
 	if len(n.config.BootstrapPeers) == 0 {
 		n.config.BootstrapPeers = dht.DefaultBootstrapPeers
 	}
+
+	gs, err := pubsub.NewGossipSub(ctx, localHost)
+	if err != nil {
+		n.Logger.Error("Failed to start pubsub", "err", err)
+		return err
+	}
+	n.pubsub = gs
+	n.registerSubscribers()
+
 	go n.Bootstrap(localHost, kademliaDHT)
 	return nil
+}
+
+func (n *Network) registerSubscribers() {
+	topic, err := n.pubsub.Join("/doid/block")
+	if err != nil {
+		n.Logger.Error("Failed to join pubsub topic", "err", err)
+		return
+	}
+	sub, err := topic.Subscribe()
+	if err != nil {
+		topic.Close()
+		n.Logger.Error("Failed to subscribe to pubsub topic", "err", err)
+		return
+	}
+	n.topicBlock = topic
+
+	// Pipeline decodes the incoming subscription data, runs the validation, and handles the
+	// message.
+	pipeline := func(msg *pubsub.Message) {
+		// @todo handle block message
+	}
+
+	// The main message loop for receiving incoming messages from this subscription.
+	messageLoop := func() {
+		for {
+			msg, err := sub.Next(ctx)
+			n.Logger.Debug("got message", "msg", msg)
+			if err != nil {
+				// This should only happen when the context is cancelled or subscription is cancelled.
+				if err != pubsub.ErrSubscriptionCancelled { // Only log an error on unexpected errors.
+					n.Logger.Error("Subscription next failed", "err", err)
+				}
+				// Cancel subscription in the event of an error, as we are
+				// now exiting topic event loop.
+				sub.Cancel()
+				return
+			}
+
+			if msg.ReceivedFrom == n.localHost.ID() {
+				n.Logger.Debug("self message")
+				continue
+			}
+
+			go pipeline(msg)
+		}
+	}
+
+	go messageLoop()
+	go func() {
+		for {
+			time.Sleep(time.Second * 5)
+			n.Logger.Debug("topic peers", "peers", n.topicBlock.ListPeers())
+			n.topicBlock.Publish(ctx, []byte("test"))
+		}
+	}()
 }
 
 func (n *Network) Bootstrap(localHost host.Host, kademliaDHT *dht.IpfsDHT) {
