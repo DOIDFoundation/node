@@ -2,10 +2,9 @@ package network
 
 import (
 	"context"
-	"fmt"
-	"io/ioutil"
 	"sync"
-	"time"
+
+	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/flags"
@@ -18,11 +17,8 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 	drouting "github.com/libp2p/go-libp2p/p2p/discovery/routing"
-	dutil "github.com/libp2p/go-libp2p/p2p/discovery/util"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/spf13/viper"
 )
@@ -76,7 +72,7 @@ func (n *Network) OnStart() error {
 
 	// Set a function as stream handler. This function is called when a peer
 	// initiates a connection and starts a stream with this peer.
-	localHost.SetStreamHandler(protocol.ID(ProtocolID), n.handleStream)
+	//localHost.SetStreamHandler(protocol.ID(ProtocolID), n.handleStream)
 
 	// Start a DHT, for use in peer discovery. We can't just make a new DHT
 	// client because we want each peer to maintain its own local copy of the
@@ -99,16 +95,19 @@ func (n *Network) OnStart() error {
 		n.config.BootstrapPeers = dht.DefaultBootstrapPeers
 	}
 
-	gs, err := pubsub.NewGossipSub(ctx, localHost)
+	ps, err := pubsub.NewGossipSub(ctx, localHost)
 	if err != nil {
 		n.Logger.Error("Failed to start pubsub", "err", err)
 		return err
 	}
-	n.pubsub = gs
+	n.pubsub = ps
+	n.localHost = localHost
+
 	n.registerEventHandlers()
 	n.registerSubscribers()
 
 	go n.Bootstrap(localHost, kademliaDHT)
+
 	return nil
 }
 
@@ -149,7 +148,7 @@ func (n *Network) registerSubscribers() {
 			n.Logger.Error("failed to decode received block", "err", err)
 			return
 		}
-		n.Logger.Debug("got message", "block", *block)
+		n.Logger.Debug("got message", "block", block.Hash(), "header", block.Header)
 		// @todo handle block message
 	}
 
@@ -179,7 +178,11 @@ func (n *Network) registerSubscribers() {
 	go messageLoop()
 }
 
-func (n *Network) Bootstrap(localHost host.Host, kademliaDHT *dht.IpfsDHT) {
+func (n *Network) Bootstrap(newNode host.Host, kademliaDHT *dht.IpfsDHT) {
+	// setup local mDNS discovery
+	if err := n.setupDiscovery(newNode); err != nil {
+		panic(err)
+	}
 	// Let's connect to the bootstrap nodes first. They will tell us about the
 	// other nodes in the network.
 	var wg sync.WaitGroup
@@ -188,7 +191,7 @@ func (n *Network) Bootstrap(localHost host.Host, kademliaDHT *dht.IpfsDHT) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := localHost.Connect(ctx, *peerinfo2); err != nil {
+			if err := newNode.Connect(ctx, *peerinfo2); err != nil {
 				n.Logger.Error("Failed to connect", "peer", *peerinfo2, "err", err)
 			} else {
 				n.Logger.Info("Connection established with bootstrap network:", "peer", *peerinfo2)
@@ -199,81 +202,83 @@ func (n *Network) Bootstrap(localHost host.Host, kademliaDHT *dht.IpfsDHT) {
 
 	// We use a rendezvous point "meet me here" to announce our location.
 	// This is like telling your friends to meet you at the Eiffel Tower.
-	n.Logger.Info("Announcing ourselves...", n.config.RendezvousString)
-	routingDiscovery := drouting.NewRoutingDiscovery(kademliaDHT)
-	dutil.Advertise(ctx, routingDiscovery, n.config.RendezvousString)
-	n.Logger.Debug("Successfully announced!")
+	//n.Logger.Info("Announcing ourselves...", n.config.RendezvousString)
+	//routingDiscovery := drouting.NewRoutingDiscovery(kademliaDHT)
+	//dutil.Advertise(ctx, routingDiscovery, n.config.RendezvousString)
+	//n.Logger.Debug("Successfully announced!")
 
-	n.localHost = localHost
-	n.routingDiscovery = routingDiscovery
+	//n.localHost = newNode
+	//n.routingDiscovery = routingDiscovery
 
-	send.node = n
+	//send.node = n
 
-	go n.findP2PPeer()
-	go n.sendInfo()
+	//go n.findP2PPeer()
+	//go n.sendInfo()
 }
 
-func (n *Network) findP2PPeer() {
-	for {
-		// Now, look for others who have announced
-		// This is like your friend telling you the location to meet you.
-		n.Logger.Debug("Searching for other peers...", n.config.RendezvousString)
-		peerChan, err := n.routingDiscovery.FindPeers(ctx, n.config.RendezvousString)
-		if err != nil {
-			panic(err)
-		}
+//func (n *Network) findP2PPeer() {
+//	for {
+//		// Now, look for others who have announced
+//		// This is like your friend telling you the location to meet you.
+//		n.Logger.Debug("Searching for other peers...", n.config.RendezvousString)
+//		peerChan, err := n.routingDiscovery.FindPeers(ctx, n.config.RendezvousString)
+//		if err != nil {
+//			panic(err)
+//		}
+//
+//		for peerNode := range peerChan {
+//			if peerNode.ID == n.localHost.ID() {
+//				continue
+//			}
+//
+//			//
+//			err := n.localHost.Connect(context.Background(), peerNode)
+//			if err != nil {
+//				continue
+//			}
+//			n.Logger.Info("Connected to:", peerNode)
+//
+//		}
+//		time.Sleep(time.Second)
+//	}
+//}
 
-		for peerNode := range peerChan {
-			if peerNode.ID == n.localHost.ID() {
-				continue
-			}
-			n.Logger.Info("Found peer:", peerNode)
-			peerPool[fmt.Sprint(peerNode.ID)] = peerNode
-		}
-		time.Sleep(time.Second)
+//func (n *Network) sendInfo() {
+//	for {
+//		send.SendTestToPeers()
+//		time.Sleep(time.Second)
+//	}
+//}
+
+// discoveryNotifee gets notified when we find a new peer via mDNS discovery
+type discoveryNotifee struct {
+	h      host.Host
+	Logger log.Logger
+}
+
+// HandlePeerFound connects to peers discovered via mDNS. Once they're connected,
+// the PubSub system will automatically start interacting with them if they also
+// support PubSub.
+func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
+	if pi.ID.String() == n.h.ID().String() {
+		return
 	}
-}
-
-func (n *Network) sendInfo() {
-	for {
-		send.SendTestToPeers()
-		time.Sleep(time.Second)
-	}
-}
-
-func (n *Network) handleStream(stream network.Stream) {
-	data, err := ioutil.ReadAll(stream)
+	n.Logger.Info("discovered new peer ", pi.ID.Pretty())
+	err := n.h.Connect(context.Background(), pi)
 	if err != nil {
-		n.Logger.Error(err.Error())
+		n.Logger.Info("error connecting to peer ", pi.ID.Pretty(), ": ", err)
 	}
-
-	cmd, content := splitMessage(data)
-	n.Logger.Info("received command ：%s", cmd)
-	switch command(cmd) {
-	case cMyTest:
-		go n.handleTest(content)
-	case cVersion:
-		go handleVersion(content)
-	case cGetHash:
-	case cHashMap:
-	case cGetBlock:
-	case cBlock:
-	case cTransaction:
-	case cMyError:
-		//go handleMyError(content)
-	}
+	n.Logger.Info("connected to peer ", pi.ID.Pretty())
 }
 
-func handleVersion(content []byte) {
+const DiscoveryServiceTag = "doid-network"
 
-}
-
-func (n *Network) handleTest(content []byte) {
-	e := myerror{}
-	if err := e.deserialize(content); err != nil {
-		n.Logger.Error("failed to deserialize content", "err", err)
-	}
-	n.Logger.Info(e.Error)
+// setupDiscovery creates an mDNS discovery service and attaches it to the libp2p Host.
+// This lets us automatically discover peers on the same LAN and connect to them.
+func (n *Network) setupDiscovery(h host.Host) error {
+	// setup mDNS discovery to find local peers
+	s := mdns.NewMdnsService(h, n.config.RendezvousString, &discoveryNotifee{h: h, Logger: n.Logger})
+	return s.Start()
 }
 
 // OnStop stops the Network. It implements service.Service.

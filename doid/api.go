@@ -6,14 +6,15 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/DOIDFoundation/node/core"
-	"github.com/DOIDFoundation/node/rpc"
+	doidapi "github.com/DOIDFoundation/node/doid/doidapi"
 	"github.com/DOIDFoundation/node/types"
+	"github.com/DOIDFoundation/node/types/tx"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
+
 type PublicTransactionPoolAPI struct {
-	chain *core.BlockChain
+	b doidapi.Backend
 }
 
 type TransactionArgs struct {
@@ -26,6 +27,10 @@ type TransactionArgs struct {
 type DOIDName struct {
 	DOID  string     `json:"DOID"`
 	Owner types.Hash `json:"owner"`
+}
+
+func NewPublicTransactionPoolAPI(b doidapi.Backend) *PublicTransactionPoolAPI{
+	return &PublicTransactionPoolAPI{b}
 }
 
 func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (types.Hash, error) {
@@ -45,11 +50,17 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 	if !bytes.Equal(recoveredAddr.Bytes(), args.Owner.Bytes()) {
 		return nil, errors.New("invalid signature from owner")
 	}
+	
+	register := tx.Register{DOID: args.DOID, Owner: args.Owner, Signature: args.Signature, NameHash: nameHash}
+	encodeTx, _ := tx.NewTx(&register)
+	api.b.SendTransaction(&encodeTx)
+
 	// @todo add a register tx to mempool
 	// _, err = api.stateStore.Set(nameHash, args.Owner.Bytes())
 	// if err != nil {
 	// 	return nil, err
 	// }
+	// current := api.chain.CurrentBlock()
 	// current := api.chain.LatestBlock()
 	// if current == nil {
 	// 	current = types.NewBlockWithHeader(new(types.Header))
@@ -70,7 +81,7 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 }
 
 func (api *PublicTransactionPoolAPI) GetOwner(params DOIDName) (string, error) {
-	state, err := api.chain.LatestState()
+	state, err := api.b.BlockChain().LatestState()
 	if err != nil {
 		return "", err
 	}
@@ -95,10 +106,4 @@ func (api *PublicTransactionPoolAPI) Sign(args TransactionArgs) (string, error) 
 	}
 	sigStr := hex.EncodeToString(sig)
 	return sigStr, nil
-}
-
-func RegisterAPI(chain *core.BlockChain) error {
-	api := &PublicTransactionPoolAPI{chain: chain}
-	rpc.RegisterName("doid", api)
-	return nil
 }

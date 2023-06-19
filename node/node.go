@@ -3,7 +3,6 @@ package node
 import (
 	"github.com/DOIDFoundation/node/consensus"
 	"github.com/DOIDFoundation/node/core"
-	"github.com/DOIDFoundation/node/doid"
 	"github.com/DOIDFoundation/node/network"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/cometbft/cometbft/libs/log"
@@ -49,9 +48,6 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 	}
 
 	RegisterAPI(node)
-	if err := doid.RegisterAPI(node.chain); err != nil {
-		return nil, err
-	}
 
 	return node, nil
 }
@@ -78,3 +74,8 @@ func (n *Node) OnStop() {
 
 	n.chain.Close()
 }
+
+func (n *Node) Chain() *core.BlockChain{
+	return n.chain
+}
+

@@ -1,6 +1,8 @@
 package node
 
-import "github.com/DOIDFoundation/node/rpc"
+import (
+	"github.com/DOIDFoundation/node/rpc"
+)
 
 type API struct {
 	node *Node

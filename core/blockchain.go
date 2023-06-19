@@ -17,6 +17,7 @@ import (
 	"github.com/cosmos/iavl"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/spf13/viper"
 )
 
@@ -24,6 +25,8 @@ type BlockChain struct {
 	logger      log.Logger
 	blockStore  *store.BlockStore
 	latestBlock *types.Block
+
+	chainHeadFeed event.Feed
 
 	stateDb cosmosdb.DB
 	state   *iavl.MutableTree
@@ -76,10 +79,17 @@ func (bc *BlockChain) Close() {
 }
 
 func (bc *BlockChain) SetHead(block *types.Block) {
-	bc.logger.Info("head block", "head", block.Header)
+	bc.logger.Info("head block", "block", block.Hash(), "header", block.Header)
 	bc.blockStore.WriteBlock(block)
 	bc.blockStore.WriteHeadBlockHash(block.Hash())
 	bc.latestBlock = block
+}
+
+// CurrentBlock retrieves the current head block of the canonical chain. The
+// block is retrieved from the blockchain's internal cache.
+func (bc *BlockChain) CurrentBlock() *types.Block {
+	// return bc.currentBlock.Load().(*types.Block)
+	return bc.latestBlock
 }
 
 // LatestBlock retrieves the latest head block of the canonical chain. The
@@ -186,4 +196,8 @@ func (bc *BlockChain) ApplyBlock(block *types.Block) error {
 	bc.SetHead(block)
 
 	return nil
+}
+
+func (bc *BlockChain) SubscribeChainHeadEvent(ch chan<- types.ChainHeadEvent) event.Subscription {
+	return bc.chainHeadFeed.Subscribe(ch)
 }
