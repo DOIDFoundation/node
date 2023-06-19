@@ -212,11 +212,11 @@ func (n *Network) findP2PPeer() {
 			}
 			//n.localHost.Peerstore().ClearAddrs(peerNode.ID)
 			//
-			//err := n.localHost.Connect(context.Background(), peerNode)
-			//if err != nil {
-			//	continue
-			//}
-			//n.Logger.Info("Connected to:", peerNode)
+			err := n.localHost.Connect(context.Background(), peerNode)
+			if err != nil {
+				continue
+			}
+			n.Logger.Info("Connected to:", peerNode)
 			//n.localHost.Peerstore().RemovePeer()
 			n.Logger.Info("Found peer:", peerNode)
 
