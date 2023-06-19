@@ -118,7 +118,7 @@ func (c *Consensus) startMine(stop chan struct{}) error {
 // actual mining function
 func (c *Consensus) mine(id int, seed uint64, abort chan struct{}, found chan *types.Block) {
 	var (
-		parent    = c.chain.CurrentBlock()
+		parent    = c.chain.LatestBlock()
 		target    = new(big.Int).Div(two256, parent.Header.Difficulty)
 		attempts  = int64(0)
 		nonce     = seed
@@ -171,7 +171,7 @@ func (c *Consensus) resultLoop() {
 	for {
 		select {
 		case block := <-c.resultCh:
-			c.chain.SetHead(block)
+			c.chain.ApplyBlock(block)
 			c.CommitWork()
 
 		case <-c.exitCh:

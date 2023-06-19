@@ -7,7 +7,7 @@ import (
 
 type Block struct {
 	Header *Header `json:"header"`
-	Data   *Data   `json:"data"`
+	Data   `json:"data"`
 
 	// // These fields are used by package eth to track
 	// // inter-peer block relay.

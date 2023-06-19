@@ -9,6 +9,7 @@ type Address = cmttypes.Address
 type BlockNonce = ethtypes.BlockNonce
 type Data = cmttypes.Data
 type Tx = cmttypes.Tx
+type Txs = cmttypes.Txs
 
 type TxType = uint8
 

@@ -3,10 +3,13 @@ package store
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
 
 	cmtdb "github.com/cometbft/cometbft-db"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/spf13/viper"
 
+	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/cometbft/cometbft/libs/log"
 	cmttypes "github.com/cometbft/cometbft/types"
@@ -17,11 +20,16 @@ type BlockStore struct {
 	db     cmtdb.DB
 }
 
-func NewBlockStore(db cmtdb.DB, logger log.Logger) *BlockStore {
+func NewBlockStore(logger log.Logger) (*BlockStore, error) {
+	homeDir := viper.GetString(flags.Home)
+	db, err := cmtdb.NewDB("chaindata", cmtdb.BackendType(viper.GetString(flags.DB_Engine)), filepath.Join(homeDir, "data"))
+	if err != nil {
+		return nil, err
+	}
 	return &BlockStore{
 		logger: logger.With("module", "blockStore"),
 		db:     db,
-	}
+	}, nil
 }
 
 func (bs *BlockStore) ReadBlock(hash types.Hash) *types.Block {
