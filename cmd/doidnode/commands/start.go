@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 
+	"github.com/DOIDFoundation/node/doid"
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/node"
 	"github.com/cometbft/cometbft/libs/os"
@@ -28,6 +29,12 @@ var StartCmd = &cobra.Command{
 		n, err := node.NewNode(logger)
 		if err != nil {
 			return fmt.Errorf("failed to create node: %w", err)
+		}
+
+		backend, err := doid.New(n)
+		backend.StartMining()
+		if err != nil {
+			return fmt.Errorf("failed to create backend: %w", err)
 		}
 
 		if err := n.Start(); err != nil {
