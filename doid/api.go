@@ -5,23 +5,16 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/big"
-	"path/filepath"
-	"time"
 
-	"github.com/DOIDFoundation/node/core"
-	"github.com/DOIDFoundation/node/rpc"
-	"github.com/DOIDFoundation/node/store"
+	doidapi "github.com/DOIDFoundation/node/doid/doidapi"
 	"github.com/DOIDFoundation/node/types"
-	"github.com/cometbft/cometbft/libs/cli"
-	cosmosdb "github.com/cosmos/cosmos-db"
+	"github.com/DOIDFoundation/node/types/tx"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/spf13/viper"
 )
 
+
 type PublicTransactionPoolAPI struct {
-	chain      *core.BlockChain
-	stateStore *store.StateStore
+	b doidapi.Backend
 }
 
 type TransactionArgs struct {
@@ -34,6 +27,10 @@ type TransactionArgs struct {
 type DOIDName struct {
 	DOID  string     `json:"DOID"`
 	Owner types.Hash `json:"owner"`
+}
+
+func NewPublicTransactionPoolAPI(b doidapi.Backend) *PublicTransactionPoolAPI{
+	return &PublicTransactionPoolAPI{b}
 }
 
 func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (types.Hash, error) {
@@ -53,37 +50,42 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 	if (!bytes.Equal(recoveredAddr.Bytes() , args.Owner.Bytes())){
 		return nil, errors.New("invalid signature from owner")
 	}
-	_, err = api.stateStore.Set(nameHash, args.Owner.Bytes())
-	if err != nil {
-		return nil, err
-	}
-	current := api.chain.CurrentBlock()
-	if current == nil {
-		current = types.NewBlockWithHeader(new(types.Header))
-	}
-	header := types.CopyHeader(current.Header)
-	header.Height.Add(header.Height, big.NewInt(1))
-	header.ParentHash = current.Hash()
-	header.Time = time.Now()
-	hash, err := api.stateStore.Commit()
-	if err != nil {
-		api.stateStore.Rollback()
-		return nil, err
-	}
-	header.Root = hash
-	block := types.NewBlockWithHeader(header)
-	api.chain.SetHead(block)
+	
+	register := tx.Register{DOID: args.DOID, Owner: args.Owner, Signature: args.Signature, NameHash: nameHash}
+	encodeTx, _ := tx.NewTx(&register)
+	api.b.SendTransaction(&encodeTx)
+
+	// _, err = api.stateStore.Set(nameHash, args.Owner.Bytes())
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// current := api.chain.CurrentBlock()
+	// if current == nil {
+	// 	current = types.NewBlockWithHeader(new(types.Header))
+	// }
+	// header := types.CopyHeader(current.Header)
+	// header.Height.Add(header.Height, big.NewInt(1))
+	// header.ParentHash = current.Hash()
+	// header.Time = time.Now()
+	// hash, err := api.stateStore.Commit()
+	// if err != nil {
+	// 	api.stateStore.Rollback()
+	// 	return nil, err
+	// }
+	// header.Root = hash
+	// block := types.NewBlockWithHeader(header)
+	// api.chain.SetHead(block)
 	return nil, nil
 }
 
-func (api *PublicTransactionPoolAPI) GetOwner(params DOIDName) (string, error) {
-	owner, err := api.stateStore.Get(crypto.Keccak256([]byte(params.DOID)))
-	if err != nil {
-		return "", err
-	}
-	ownerAddress := hex.EncodeToString(owner)
-	return ownerAddress, nil
-}
+// func (api *PublicTransactionPoolAPI) GetOwner(params DOIDName) (string, error) {
+// 	owner, err := api.b.Doid.StateStore().Get(crypto.Keccak256([]byte(params.DOID)))
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	ownerAddress := hex.EncodeToString(owner)
+// 	return ownerAddress, nil
+// }
 
 func (api *PublicTransactionPoolAPI) Sign(args TransactionArgs) (string, error) {
 	nameHash := crypto.Keccak256([]byte(args.DOID))
@@ -100,20 +102,50 @@ func (api *PublicTransactionPoolAPI) Sign(args TransactionArgs) (string, error) 
 	return sigStr, nil
 }
 
-func RegisterAPI(chain *core.BlockChain) error {
-	homeDir := viper.GetString(cli.HomeFlag)
-	db, err := cosmosdb.NewDB("state", cosmosdb.GoLevelDBBackend, filepath.Join(homeDir, "data"))
-	if err != nil {
-		return err
-	}
 
-	stateStore, err := store.NewStateStore(db)
-	if err != nil {
-		db.Close()
-		return err
-	}
 
-	api := &PublicTransactionPoolAPI{chain: chain, stateStore: stateStore}
-	rpc.RegisterName("doid", api)
-	return nil
-}
+// func RegisterAPI(node node.Node) error {
+// 	homeDir := viper.GetString(cli.HomeFlag)
+// 	db, err := cosmosdb.NewDB("state", cosmosdb.GoLevelDBBackend, filepath.Join(homeDir, "data"))
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	stateStore, err := store.NewStateStore(db)
+// 	if err != nil {
+// 		db.Close()
+// 		return err
+// 	}
+
+// 	// NewPublicTransactionPoolAPI(node)
+// 	api := &PublicTransactionPoolAPI{mempool: node.Mempool() ,chain: node.Chain(), stateStore: stateStore}
+// 	rpc.RegisterName("doid", api)
+// 	return nil
+// }
+
+// func RegisterAPI(name string, receiver interface {})error{
+// 	homeDir := viper.GetString(cli.HomeFlag)
+// 	db, err := cosmosdb.NewDB("state", cosmosdb.GoLevelDBBackend, filepath.Join(homeDir, "data"))
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	stateStore, err := store.NewStateStore(db)
+// 	if err != nil {
+// 		db.Close()
+// 		return err
+// 	}
+
+// 	// NewPublicTransactionPoolAPI(node)
+// 	re := reflect.ValueOf(receiver)
+// 	if re.Kind() != reflect.Struct{
+// 		return errors.New("invalid node type")
+// 	}
+// 	node := re.MethodByName("Node")
+// 	ret := node.Call([]reflect.Value{})
+	
+// 	api := &PublicTransactionPoolAPI{mempool: node.Node().Mempool() ,chain: node.Chain(), stateStore: stateStore}
+// 	rpc.RegisterName("doid", api)
+// 	return nil
+
+// }

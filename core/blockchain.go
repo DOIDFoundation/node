@@ -7,12 +7,15 @@ import (
 	"github.com/DOIDFoundation/node/store"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/cometbft/cometbft/libs/log"
+	"github.com/ethereum/go-ethereum/event"
 )
 
 type BlockChain struct {
 	logger       log.Logger
 	blockStore   *store.BlockStore
 	currentBlock atomic.Value // Current head of the block chain
+
+	chainHeadFeed event.Feed
 }
 
 func NewBlockChain(blockStore *store.BlockStore, logger log.Logger) (*BlockChain, error) {
@@ -48,4 +51,8 @@ func (bc *BlockChain) SetHead(block *types.Block) {
 // block is retrieved from the blockchain's internal cache.
 func (bc *BlockChain) CurrentBlock() *types.Block {
 	return bc.currentBlock.Load().(*types.Block)
+}
+
+func (bc *BlockChain) SubscribeChainHeadEvent(ch chan<- types.ChainHeadEvent) (event.Subscription){
+	return bc.chainHeadFeed.Subscribe(ch)
 }

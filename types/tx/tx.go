@@ -5,8 +5,16 @@ import (
 	"github.com/DOIDFoundation/node/types/encodedtx"
 )
 
+func NewTx(val types.TypedTx) (types.Tx, error) {
+	encoded, err := encodedtx.FromTypedTx(val)
+	if err != nil {
+		return nil, err
+	}
+	return encoded.ToTx()
+}
+
 func Decode(tx types.Tx, val types.TypedTx) error {
-	encoded, err := encodedtx.FromBytes(tx)
+	encoded, err := encodedtx.FromTx(tx)
 	if err != nil {
 		return err
 	}

@@ -5,8 +5,8 @@ import (
 
 	"github.com/DOIDFoundation/node/consensus"
 	"github.com/DOIDFoundation/node/core"
-	"github.com/DOIDFoundation/node/doid"
 	"github.com/DOIDFoundation/node/mempool"
+	"github.com/DOIDFoundation/node/network"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/DOIDFoundation/node/store"
 	cmtdb "github.com/cometbft/cometbft-db"
@@ -29,6 +29,7 @@ type Node struct {
 	blockStore *store.BlockStore
 	chain      *core.BlockChain
 	consensus  *consensus.Consensus
+	network    *network.Network
 }
 
 // Option sets a parameter for the node.
@@ -48,16 +49,14 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 		return nil, err
 	}
 
-	mp := mempool.NewMempool(logger)
-
 	node := &Node{
 		config: &DefaultConfig,
 		rpc:    rpc.NewRPC(logger),
 
-		mempool: mp,
 		blockStore: blockStore,
 		chain:      chain,
 		consensus:  consensus.New(chain, logger),
+		network:    network.NewNetwork(logger),
 	}
 	node.BaseService = *service.NewBaseService(logger, "Node", node)
 
@@ -66,10 +65,6 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 	}
 
 	RegisterAPI(node)
-	if err := doid.RegisterAPI(node); err != nil {
-		db.Close()
-		return nil, err
-	}
 
 	return node, nil
 }
@@ -77,6 +72,9 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 // OnStart starts the Node. It implements service.Service.
 func (n *Node) OnStart() error {
 	if err := n.rpc.Start(); err != nil {
+		return err
+	}
+	if err := n.network.Start(); err != nil {
 		return err
 	}
 	if err := n.consensus.Start(); err != nil {
@@ -89,11 +87,9 @@ func (n *Node) OnStart() error {
 func (n *Node) OnStop() {
 	n.consensus.Stop()
 	n.rpc.Stop()
-	n.blockStore.Close()
-}
+	n.network.Stop()
 
-func (n *Node) Mempool() *mempool.Mempool{
-	return n.mempool
+	n.blockStore.Close()
 }
 
 func (n *Node) Chain() *core.BlockChain{
