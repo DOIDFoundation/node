@@ -143,7 +143,16 @@ func (n *Network) findP2PPeer() {
 			if peerNode.ID == n.localHost.ID() {
 				continue
 			}
+			//n.localHost.Peerstore().ClearAddrs(peerNode.ID)
+			//
+			//err := n.localHost.Connect(context.Background(), peerNode)
+			//if err != nil {
+			//	continue
+			//}
+			//n.Logger.Info("Connected to:", peerNode)
+			//n.localHost.Peerstore().RemovePeer()
 			n.Logger.Info("Found peer:", peerNode)
+
 			peerPool[fmt.Sprint(peerNode.ID)] = peerNode
 		}
 		time.Sleep(time.Second)
