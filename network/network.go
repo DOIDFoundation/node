@@ -108,6 +108,7 @@ func (n *Network) OnStart() error {
 }
 
 func (n *Network) registerSubscribers() {
+	// @todo use different topic for different fork
 	topic, err := n.pubsub.Join("/doid/block")
 	if err != nil {
 		n.Logger.Error("Failed to join pubsub topic", "err", err)
