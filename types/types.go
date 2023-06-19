@@ -10,6 +10,7 @@ type BlockNonce = ethtypes.BlockNonce
 type Data = cmttypes.Data
 type Tx = cmttypes.Tx
 type TxHash = cmttypes.TxKey
+type Txs = cmttypes.Txs
 
 type TxType = uint8
 

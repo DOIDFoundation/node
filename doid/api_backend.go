@@ -19,5 +19,5 @@ func (d *DoidAPIBackend) SendTransaction(tx *types.Tx) error{
 }
 
 func (d *DoidAPIBackend) MemPool() *mempool.Mempool{return d.Doid.MemPool()}
-func (d *DoidAPIBackend) Chain() *core.BlockChain{return d.Doid.BlockChain()}
+func (d *DoidAPIBackend) BlockChain() *core.BlockChain{return d.Doid.BlockChain()}
 // func (d *DoidAPIBackend) StateStore() *cosmosdb.cosmosdb{return d.StateStore()}

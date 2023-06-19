@@ -7,10 +7,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DOIDFoundation/node/flags"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -32,6 +34,8 @@ type Network struct {
 
 	localHost        host.Host
 	routingDiscovery *drouting.RoutingDiscovery
+	pubsub           *pubsub.PubSub
+	topicBlock       *pubsub.Topic
 }
 
 // Option sets a parameter for the network.
@@ -42,7 +46,7 @@ func NewNetwork(logger log.Logger) *Network {
 	network := &Network{
 		config: &DefaultConfig,
 	}
-	network.BaseService = *service.NewBaseService(logger, "Network", network)
+	network.BaseService = *service.NewBaseService(logger.With("module", "network"), "Network", network)
 
 	return network
 }
@@ -50,7 +54,7 @@ func NewNetwork(logger log.Logger) *Network {
 // OnStart starts the Network. It implements service.Service.
 func (n *Network) OnStart() error {
 	var opts []libp2p.Option
-	n.config.ListenAddresses = viper.GetString("p2p.addr")
+	n.config.ListenAddresses = viper.GetString(flags.P2P_Addr)
 	n.config.RendezvousString = viper.GetString("rendezvous")
 	m1, err := multiaddr.NewMultiaddr(n.config.ListenAddresses)
 	if err != nil {
@@ -63,7 +67,7 @@ func (n *Network) OnStart() error {
 		return err
 	}
 
-	n.Logger.Info("Host created. We are:", localHost.ID(), localHost.Addrs())
+	n.Logger.Info("Host created. We are:", "id", localHost.ID(), "addrs", localHost.Addrs())
 	//n.Logger.Info(host.Addrs())
 
 	// Set a function as stream handler. This function is called when a peer
@@ -90,6 +94,75 @@ func (n *Network) OnStart() error {
 	if len(n.config.BootstrapPeers) == 0 {
 		n.config.BootstrapPeers = dht.DefaultBootstrapPeers
 	}
+
+	gs, err := pubsub.NewGossipSub(ctx, localHost)
+	if err != nil {
+		n.Logger.Error("Failed to start pubsub", "err", err)
+		return err
+	}
+	n.pubsub = gs
+	n.registerSubscribers()
+
+	go n.Bootstrap(localHost, kademliaDHT)
+	return nil
+}
+
+func (n *Network) registerSubscribers() {
+	topic, err := n.pubsub.Join("/doid/block")
+	if err != nil {
+		n.Logger.Error("Failed to join pubsub topic", "err", err)
+		return
+	}
+	sub, err := topic.Subscribe()
+	if err != nil {
+		topic.Close()
+		n.Logger.Error("Failed to subscribe to pubsub topic", "err", err)
+		return
+	}
+	n.topicBlock = topic
+
+	// Pipeline decodes the incoming subscription data, runs the validation, and handles the
+	// message.
+	pipeline := func(msg *pubsub.Message) {
+		// @todo handle block message
+	}
+
+	// The main message loop for receiving incoming messages from this subscription.
+	messageLoop := func() {
+		for {
+			msg, err := sub.Next(ctx)
+			n.Logger.Debug("got message", "msg", msg)
+			if err != nil {
+				// This should only happen when the context is cancelled or subscription is cancelled.
+				if err != pubsub.ErrSubscriptionCancelled { // Only log an error on unexpected errors.
+					n.Logger.Error("Subscription next failed", "err", err)
+				}
+				// Cancel subscription in the event of an error, as we are
+				// now exiting topic event loop.
+				sub.Cancel()
+				return
+			}
+
+			if msg.ReceivedFrom == n.localHost.ID() {
+				n.Logger.Debug("self message")
+				continue
+			}
+
+			go pipeline(msg)
+		}
+	}
+
+	go messageLoop()
+	go func() {
+		for {
+			time.Sleep(time.Second * 5)
+			n.Logger.Debug("topic peers", "peers", n.topicBlock.ListPeers())
+			n.topicBlock.Publish(ctx, []byte("test"))
+		}
+	}()
+}
+
+func (n *Network) Bootstrap(localHost host.Host, kademliaDHT *dht.IpfsDHT) {
 	// Let's connect to the bootstrap nodes first. They will tell us about the
 	// other nodes in the network.
 	var wg sync.WaitGroup
@@ -99,9 +172,9 @@ func (n *Network) OnStart() error {
 		go func() {
 			defer wg.Done()
 			if err := localHost.Connect(ctx, *peerinfo2); err != nil {
-				n.Logger.Error(err.Error())
+				n.Logger.Error("Failed to connect", "peer", *peerinfo2, "err", err)
 			} else {
-				n.Logger.Info("Connection established with bootstrap network:", *peerinfo2)
+				n.Logger.Info("Connection established with bootstrap network:", "peer", *peerinfo2)
 			}
 		}()
 	}
@@ -121,7 +194,6 @@ func (n *Network) OnStart() error {
 
 	go n.findP2PPeer()
 	go n.sendInfo()
-	return nil
 }
 
 func (n *Network) findP2PPeer() {
@@ -138,7 +210,16 @@ func (n *Network) findP2PPeer() {
 			if peerNode.ID == n.localHost.ID() {
 				continue
 			}
+			//n.localHost.Peerstore().ClearAddrs(peerNode.ID)
+			//
+			err := n.localHost.Connect(context.Background(), peerNode)
+			if err != nil {
+				continue
+			}
+			n.Logger.Info("Connected to:", peerNode)
+			//n.localHost.Peerstore().RemovePeer()
 			n.Logger.Info("Found peer:", peerNode)
+
 			peerPool[fmt.Sprint(peerNode.ID)] = peerNode
 		}
 		time.Sleep(time.Second)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/DOIDFoundation/node/doid"
+	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/node"
 	"github.com/cometbft/cometbft/libs/os"
 	"github.com/spf13/cobra"
@@ -12,8 +13,9 @@ import (
 
 // addFlags exposes configuration options for starting a node.
 func addFlags(cmd *cobra.Command) {
-	cmd.Flags().String("rpc.addr", "127.0.0.1:26657", "rpc listen address")
-	cmd.Flags().String("p2p.addr", "/ip4/127.0.0.1/tcp/26667", "p2p listen address")
+	cmd.Flags().String(flags.RPC_Addr, "127.0.0.1:26657", "rpc listen address")
+	cmd.Flags().String(flags.P2P_Addr, "/ip4/127.0.0.1/tcp/26667", "p2p listen address")
+	cmd.Flags().String(flags.DB_Engine, "goleveldb", "Backing database implementation to use ('memdb' or 'goleveldb')")
 	cmd.Flags().StringP("rendezvous", "r", "", "rendezvous")
 	viper.BindPFlags(cmd.Flags())
 }
@@ -22,7 +24,7 @@ func addFlags(cmd *cobra.Command) {
 var StartCmd = &cobra.Command{
 	Use:     "start",
 	Aliases: []string{"node", "run"},
-	Short:   "Run the CometBFT node",
+	Short:   "Run the DOID node",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		n, err := node.NewNode(logger)
 		if err != nil {

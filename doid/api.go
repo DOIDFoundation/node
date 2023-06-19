@@ -41,13 +41,13 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 		return nil, errors.New("missing args: Signature")
 	}
 
-	nameHash :=  crypto.Keccak256([]byte(args.DOID))
-	recovered,err := crypto.SigToPub(nameHash, args.Signature)
-	if err != nil{
+	nameHash := crypto.Keccak256([]byte(args.DOID))
+	recovered, err := crypto.SigToPub(nameHash, args.Signature)
+	if err != nil {
 		return nil, errors.New("invalid args: Signature")
 	}
 	recoveredAddr := crypto.PubkeyToAddress(*recovered)
-	if (!bytes.Equal(recoveredAddr.Bytes() , args.Owner.Bytes())){
+	if !bytes.Equal(recoveredAddr.Bytes(), args.Owner.Bytes()) {
 		return nil, errors.New("invalid signature from owner")
 	}
 	
@@ -55,11 +55,13 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 	encodeTx, _ := tx.NewTx(&register)
 	api.b.SendTransaction(&encodeTx)
 
+	// @todo add a register tx to mempool
 	// _, err = api.stateStore.Set(nameHash, args.Owner.Bytes())
 	// if err != nil {
 	// 	return nil, err
 	// }
 	// current := api.chain.CurrentBlock()
+	// current := api.chain.LatestBlock()
 	// if current == nil {
 	// 	current = types.NewBlockWithHeader(new(types.Header))
 	// }
@@ -78,14 +80,18 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 	return nil, nil
 }
 
-// func (api *PublicTransactionPoolAPI) GetOwner(params DOIDName) (string, error) {
-// 	owner, err := api.b.Doid.StateStore().Get(crypto.Keccak256([]byte(params.DOID)))
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	ownerAddress := hex.EncodeToString(owner)
-// 	return ownerAddress, nil
-// }
+func (api *PublicTransactionPoolAPI) GetOwner(params DOIDName) (string, error) {
+	state, err := api.b.BlockChain().LatestState()
+	if err != nil {
+		return "", err
+	}
+	owner, err := state.Get(crypto.Keccak256([]byte(params.DOID)))
+	if err != nil {
+		return "", err
+	}
+	ownerAddress := hex.EncodeToString(owner)
+	return ownerAddress, nil
+}
 
 func (api *PublicTransactionPoolAPI) Sign(args TransactionArgs) (string, error) {
 	nameHash := crypto.Keccak256([]byte(args.DOID))
@@ -101,51 +107,3 @@ func (api *PublicTransactionPoolAPI) Sign(args TransactionArgs) (string, error) 
 	sigStr := hex.EncodeToString(sig)
 	return sigStr, nil
 }
-
-
-
-// func RegisterAPI(node node.Node) error {
-// 	homeDir := viper.GetString(cli.HomeFlag)
-// 	db, err := cosmosdb.NewDB("state", cosmosdb.GoLevelDBBackend, filepath.Join(homeDir, "data"))
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	stateStore, err := store.NewStateStore(db)
-// 	if err != nil {
-// 		db.Close()
-// 		return err
-// 	}
-
-// 	// NewPublicTransactionPoolAPI(node)
-// 	api := &PublicTransactionPoolAPI{mempool: node.Mempool() ,chain: node.Chain(), stateStore: stateStore}
-// 	rpc.RegisterName("doid", api)
-// 	return nil
-// }
-
-// func RegisterAPI(name string, receiver interface {})error{
-// 	homeDir := viper.GetString(cli.HomeFlag)
-// 	db, err := cosmosdb.NewDB("state", cosmosdb.GoLevelDBBackend, filepath.Join(homeDir, "data"))
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	stateStore, err := store.NewStateStore(db)
-// 	if err != nil {
-// 		db.Close()
-// 		return err
-// 	}
-
-// 	// NewPublicTransactionPoolAPI(node)
-// 	re := reflect.ValueOf(receiver)
-// 	if re.Kind() != reflect.Struct{
-// 		return errors.New("invalid node type")
-// 	}
-// 	node := re.MethodByName("Node")
-// 	ret := node.Call([]reflect.Value{})
-	
-// 	api := &PublicTransactionPoolAPI{mempool: node.Node().Mempool() ,chain: node.Chain(), stateStore: stateStore}
-// 	rpc.RegisterName("doid", api)
-// 	return nil
-
-// }

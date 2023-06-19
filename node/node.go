@@ -1,19 +1,12 @@
 package node
 
 import (
-	"path/filepath"
-
 	"github.com/DOIDFoundation/node/consensus"
 	"github.com/DOIDFoundation/node/core"
-	"github.com/DOIDFoundation/node/mempool"
 	"github.com/DOIDFoundation/node/network"
 	"github.com/DOIDFoundation/node/rpc"
-	"github.com/DOIDFoundation/node/store"
-	cmtdb "github.com/cometbft/cometbft-db"
-	"github.com/cometbft/cometbft/libs/cli"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
-	"github.com/spf13/viper"
 )
 
 //------------------------------------------------------------------------------
@@ -25,11 +18,9 @@ type Node struct {
 	config *Config
 	rpc    *rpc.RPC
 
-	mempool 	*mempool.Mempool
-	blockStore *store.BlockStore
-	chain      *core.BlockChain
-	consensus  *consensus.Consensus
-	network    *network.Network
+	chain     *core.BlockChain
+	consensus *consensus.Consensus
+	network   *network.Network
 }
 
 // Option sets a parameter for the node.
@@ -37,14 +28,7 @@ type Option func(*Node)
 
 // NewNode returns a new, ready to go, CometBFT Node.
 func NewNode(logger log.Logger, options ...Option) (*Node, error) {
-	homeDir := viper.GetString(cli.HomeFlag)
-	db, err := cmtdb.NewDB("chaindata", cmtdb.GoLevelDBBackend, filepath.Join(homeDir, "data"))
-	if err != nil {
-		return nil, err
-	}
-	blockStore := store.NewBlockStore(db, logger)
-
-	chain, err := core.NewBlockChain(blockStore, logger)
+	chain, err := core.NewBlockChain(logger)
 	if err != nil {
 		return nil, err
 	}
@@ -53,12 +37,11 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 		config: &DefaultConfig,
 		rpc:    rpc.NewRPC(logger),
 
-		blockStore: blockStore,
-		chain:      chain,
-		consensus:  consensus.New(chain, logger),
-		network:    network.NewNetwork(logger),
+		chain:     chain,
+		consensus: consensus.New(chain, logger),
+		network:   network.NewNetwork(logger),
 	}
-	node.BaseService = *service.NewBaseService(logger, "Node", node)
+	node.BaseService = *service.NewBaseService(logger.With("module", "node"), "Node", node)
 
 	for _, option := range options {
 		option(node)
@@ -89,7 +72,7 @@ func (n *Node) OnStop() {
 	n.rpc.Stop()
 	n.network.Stop()
 
-	n.blockStore.Close()
+	n.chain.Close()
 }
 
 func (n *Node) Chain() *core.BlockChain{
