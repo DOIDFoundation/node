@@ -7,9 +7,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/flags"
+	"github.com/DOIDFoundation/node/types"
+	"github.com/cometbft/cometbft/libs/events"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -101,10 +105,23 @@ func (n *Network) OnStart() error {
 		return err
 	}
 	n.pubsub = gs
+	n.registerEventHandlers()
 	n.registerSubscribers()
 
 	go n.Bootstrap(localHost, kademliaDHT)
 	return nil
+}
+
+func (n *Network) registerEventHandlers() {
+	core.EventInstance().AddListenerForEvent(n.String(), types.EventNewBlock, func(data events.EventData) {
+		b, err := rlp.EncodeToBytes(data.(*types.Block))
+		if err != nil {
+			n.Logger.Error("failed to encode block for broadcasting", "err", err)
+			return
+		}
+		n.Logger.Debug("topic peers", "peers", n.topicBlock.ListPeers())
+		n.topicBlock.Publish(ctx, b)
+	})
 }
 
 func (n *Network) registerSubscribers() {
@@ -125,6 +142,14 @@ func (n *Network) registerSubscribers() {
 	// Pipeline decodes the incoming subscription data, runs the validation, and handles the
 	// message.
 	pipeline := func(msg *pubsub.Message) {
+		data := msg.GetData()
+		block := new(types.Block)
+		err := rlp.DecodeBytes(data, block)
+		if err != nil {
+			n.Logger.Error("failed to decode received block", "err", err)
+			return
+		}
+		n.Logger.Debug("got message", "block", *block)
 		// @todo handle block message
 	}
 
@@ -132,7 +157,6 @@ func (n *Network) registerSubscribers() {
 	messageLoop := func() {
 		for {
 			msg, err := sub.Next(ctx)
-			n.Logger.Debug("got message", "msg", msg)
 			if err != nil {
 				// This should only happen when the context is cancelled or subscription is cancelled.
 				if err != pubsub.ErrSubscriptionCancelled { // Only log an error on unexpected errors.
@@ -145,7 +169,6 @@ func (n *Network) registerSubscribers() {
 			}
 
 			if msg.ReceivedFrom == n.localHost.ID() {
-				n.Logger.Debug("self message")
 				continue
 			}
 
@@ -154,13 +177,6 @@ func (n *Network) registerSubscribers() {
 	}
 
 	go messageLoop()
-	go func() {
-		for {
-			time.Sleep(time.Second * 5)
-			n.Logger.Debug("topic peers", "peers", n.topicBlock.ListPeers())
-			n.topicBlock.Publish(ctx, []byte("test"))
-		}
-	}()
 }
 
 func (n *Network) Bootstrap(localHost host.Host, kademliaDHT *dht.IpfsDHT) {

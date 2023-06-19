@@ -172,6 +172,7 @@ func (c *Consensus) resultLoop() {
 		select {
 		case block := <-c.resultCh:
 			c.chain.ApplyBlock(block)
+			core.EventInstance().FireEvent(types.EventNewBlock, block)
 			c.CommitWork()
 
 		case <-c.exitCh:
