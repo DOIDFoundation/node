@@ -92,6 +92,8 @@ func (bc *BlockChain) registerEventHandlers() {
 		}
 		if err := bc.ApplyBlock(block); err != nil {
 			bc.Logger.Error("bad block from network", "err", err, "block", block.Hash(), "header", block.Header)
+			// @todo check if fork happened
+			EventInstance().FireEvent(types.EventForkDetected, nil)
 		}
 	})
 }

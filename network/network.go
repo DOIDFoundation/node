@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 
@@ -48,6 +49,7 @@ func NewNetwork(logger log.Logger) *Network {
 	}
 	network.BaseService = *service.NewBaseService(logger.With("module", "network"), "Network", network)
 
+	network.registerEventHandlers()
 	return network
 }
 
@@ -103,7 +105,6 @@ func (n *Network) OnStart() error {
 	n.pubsub = ps
 	n.localHost = localHost
 
-	n.registerEventHandlers()
 	n.registerSubscribers()
 
 	go n.Bootstrap(localHost, kademliaDHT)
@@ -117,7 +118,17 @@ func (n *Network) OnStop() {
 }
 
 func (n *Network) registerEventHandlers() {
+	core.EventInstance().AddListenerForEvent(n.String(), types.EventForkDetected, func(data events.EventData) {
+		// @todo handle fork event
+		core.EventInstance().FireEvent(types.EventSyncStarted, nil)
+		time.Sleep(time.Second)
+		core.EventInstance().FireEvent(types.EventSyncFinished, nil)
+	})
 	core.EventInstance().AddListenerForEvent(n.String(), types.EventNewMinedBlock, func(data events.EventData) {
+		if n.topicBlock == nil {
+			n.Logger.Info("not broadcasting, new block topic not joined")
+			return
+		}
 		b, err := rlp.EncodeToBytes(data.(*types.Block))
 		if err != nil {
 			n.Logger.Error("failed to encode block for broadcasting", "err", err)
@@ -204,6 +215,7 @@ func (n *Network) Bootstrap(newNode host.Host, kademliaDHT *dht.IpfsDHT) {
 		}()
 	}
 	wg.Wait()
+	core.EventInstance().FireEvent(types.EventSyncFinished, nil)
 
 	// We use a rendezvous point "meet me here" to announce our location.
 	// This is like telling your friends to meet you at the Eiffel Tower.

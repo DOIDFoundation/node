@@ -60,22 +60,22 @@ func (n *Node) OnStart() error {
 	if err := n.network.Start(); err != nil {
 		return err
 	}
-	if err := n.consensus.Start(); err != nil {
-		return err
-	}
 	return nil
 }
 
 // OnStop stops the Node. It implements service.Service.
 func (n *Node) OnStop() {
-	n.consensus.Stop()
+	if n.consensus.IsRunning() {
+		n.consensus.Stop()
+		defer n.Logger.Info("waiting for consensus to finish stopping")
+		defer n.consensus.Wait()
+	}
 	n.rpc.Stop()
 	n.network.Stop()
 
 	n.chain.Close()
 }
 
-func (n *Node) Chain() *core.BlockChain{
+func (n *Node) Chain() *core.BlockChain {
 	return n.chain
 }
-

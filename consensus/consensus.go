@@ -28,7 +28,6 @@ type Consensus struct {
 	taskCh   chan struct{}
 	resultCh chan *types.Block
 	startCh  chan struct{}
-	exitCh   chan struct{}
 	chain    *core.BlockChain
 }
 
@@ -37,33 +36,40 @@ func New(chain *core.BlockChain, logger log.Logger) *Consensus {
 		taskCh:   make(chan struct{}),
 		resultCh: make(chan *types.Block),
 		startCh:  make(chan struct{}),
-		exitCh:   make(chan struct{}),
 		chain:    chain,
 	}
 	consensus.BaseService = *service.NewBaseService(logger.With("module", "consensus"), "Consensus", consensus)
+	consensus.registerEventHandlers()
 	return consensus
 }
 
 func (c *Consensus) OnStart() error {
-	c.registerEventHandlers()
 	c.wg.Add(3)
 	go c.mainLoop()
 	go c.resultLoop()
 	go c.newWorkLoop()
-	c.start()
+	c.startCh <- struct{}{}
 	return nil
 }
 
-func (c *Consensus) OnStop() {
-	core.EventInstance().RemoveListener(c.String())
-	close(c.exitCh)
+// Wait blocks until all routines return.
+func (c *Consensus) Wait() {
 	c.wg.Wait()
 }
 
 func (c *Consensus) registerEventHandlers() {
 	core.EventInstance().AddListenerForEvent(c.String(), types.EventNewChainHead, func(data events.EventData) {
 		// chain head changed, now commit a new work.
-		c.CommitWork()
+		c.commitWork()
+	})
+	core.EventInstance().AddListenerForEvent(c.String(), types.EventSyncStarted, func(data events.EventData) {
+		// Enter syncing, now stop mining.
+		c.Stop()
+	})
+	core.EventInstance().AddListenerForEvent(c.String(), types.EventSyncFinished, func(data events.EventData) {
+		// Sync finished, now start mining.
+		c.Logger.Info("got sync finished")
+		c.Start()
 	})
 }
 
@@ -82,7 +88,11 @@ func (c *Consensus) mainLoop() {
 			if err := c.startMine(stopCh); err != nil {
 				c.Logger.Error("block sealing failed", "err", err)
 			}
-		case <-c.exitCh:
+		case <-c.Quit():
+			if stopCh != nil {
+				close(stopCh)
+				stopCh = nil
+			}
 			return
 		}
 	}
@@ -126,7 +136,7 @@ func (c *Consensus) startMine(stop chan struct{}) error {
 				c.Logger.Info("result is not read by miner", "header", result.Header, "hash", result.Hash())
 			}
 			close(abort)
-		case <-c.exitCh:
+		case <-c.Quit():
 			// Outside abort, stop all miner threads
 			close(abort)
 		}
@@ -194,9 +204,9 @@ func (c *Consensus) resultLoop() {
 		case block := <-c.resultCh:
 			c.chain.ApplyBlock(block)
 			core.EventInstance().FireEvent(types.EventNewMinedBlock, block)
-			c.CommitWork()
+			c.commitWork()
 
-		case <-c.exitCh:
+		case <-c.Quit():
 			return
 		}
 	}
@@ -216,22 +226,18 @@ func (c *Consensus) newWorkLoop() {
 		case <-c.startCh:
 			timer.Reset(recommit)
 		case <-timer.C:
-			c.CommitWork()
+			c.commitWork()
 			timer.Reset(recommit)
-		case <-c.exitCh:
+		case <-c.Quit():
 			return
 		}
 	}
 }
 
-func (c *Consensus) start() {
-	c.startCh <- struct{}{}
-}
-
-func (c *Consensus) CommitWork() {
+func (c *Consensus) commitWork() {
 	select {
 	case c.taskCh <- struct{}{}:
-	case <-c.exitCh:
+	case <-c.Quit():
 		c.Logger.Info("exiting, work not committed")
 		return
 	}
