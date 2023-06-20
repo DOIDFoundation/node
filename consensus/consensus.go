@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/DOIDFoundation/node/core"
+	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/cometbft/cometbft/libs/events"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
+	"github.com/spf13/viper"
 )
 
 // two256 is a big integer representing 2^256
@@ -90,7 +92,10 @@ func (c *Consensus) mainLoop() {
 func (c *Consensus) startMine(stop chan struct{}) error {
 	abort := make(chan struct{})
 	found := make(chan *types.Block)
-	threads := runtime.NumCPU()
+	threads := viper.GetInt(flags.Mine_Threads)
+	if threads == 0 {
+		threads = runtime.NumCPU()
+	}
 	seed, err := crand.Int(crand.Reader, big.NewInt(math.MaxInt64))
 	if err != nil {
 		return err
