@@ -1,7 +1,9 @@
 package types
 
 const (
-	EventNewBlock = "NewBlock"
+	EventNewChainHead    = "NewChainHead"
+	EventNewMinedBlock   = "NewMinedBlock"
+	EventNewNetworkBlock = "NewNetworkBlock"
 )
 
 type ChainHeadEvent struct {

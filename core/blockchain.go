@@ -12,6 +12,7 @@ import (
 	"github.com/DOIDFoundation/node/store"
 	"github.com/DOIDFoundation/node/transactor"
 	"github.com/DOIDFoundation/node/types"
+	"github.com/cometbft/cometbft/libs/events"
 	"github.com/cometbft/cometbft/libs/log"
 	cosmosdb "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/iavl"
@@ -22,7 +23,7 @@ import (
 )
 
 type BlockChain struct {
-	logger      log.Logger
+	Logger      log.Logger
 	blockStore  *store.BlockStore
 	latestBlock *types.Block
 
@@ -47,7 +48,7 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 
 	bc := &BlockChain{
 		blockStore: blockStore,
-		logger:     logger.With("module", "blockchain"),
+		Logger:     logger.With("module", "blockchain"),
 		stateDb:    db,
 	}
 
@@ -55,7 +56,7 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 	headBlockHash := blockStore.ReadHeadBlockHash()
 	if headBlockHash != nil {
 		block = blockStore.ReadBlock(headBlockHash)
-		bc.logger.Info("found head block", "hash", headBlockHash, "block", block)
+		bc.Logger.Info("found head block", "hash", headBlockHash, "block", block)
 	}
 	if block == nil {
 		block = types.NewBlockWithHeader(&types.Header{
@@ -66,22 +67,40 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 		})
 	}
 	bc.latestBlock = block
+
+	bc.registerEventHandlers()
+
 	return bc, nil
 }
 
 func (bc *BlockChain) Close() {
+	EventInstance().RemoveListener("blockchain")
 	if err := bc.stateDb.Close(); err != nil {
-		bc.logger.Error("error closing state database", "err", err)
+		bc.Logger.Error("error closing state database", "err", err)
 	}
 	if err := bc.blockStore.Close(); err != nil {
-		bc.logger.Error("error closing block store", "err", err)
+		bc.Logger.Error("error closing block store", "err", err)
 	}
 }
 
+func (bc *BlockChain) registerEventHandlers() {
+	EventInstance().AddListenerForEvent("blockchain", types.EventNewNetworkBlock, func(data events.EventData) {
+		block := data.(*types.Block)
+		if block == nil {
+			bc.Logger.Error("bad block from network event", "block", block)
+			return
+		}
+		if err := bc.ApplyBlock(block); err != nil {
+			bc.Logger.Error("bad block from network", "err", err, "block", block.Hash(), "header", block.Header)
+		}
+	})
+}
+
 func (bc *BlockChain) SetHead(block *types.Block) {
-	bc.logger.Info("head block", "block", block.Hash(), "header", block.Header)
+	bc.Logger.Info("head block", "block", block.Hash(), "header", block.Header)
 	bc.blockStore.WriteBlock(block)
 	bc.blockStore.WriteHeadBlockHash(block.Hash())
+	EventInstance().FireEvent(types.EventNewChainHead, block)
 	bc.latestBlock = block
 }
 
@@ -111,24 +130,24 @@ func (bc *BlockChain) LatestState() (*iavl.ImmutableTree, error) {
 func (bc *BlockChain) newOpenState() (*iavl.MutableTree, error) {
 	tree, err := iavl.NewMutableTree(bc.stateDb, 128, false)
 	if err != nil {
-		bc.logger.Error("failed to open block state", "err", err)
+		bc.Logger.Error("failed to open block state", "err", err)
 		return nil, err
 	}
 	if _, err := tree.LazyLoadVersionForOverwriting(bc.LatestBlock().Header.Height.Int64()); err != nil {
-		bc.logger.Error("failed to open block state", "err", err)
+		bc.Logger.Error("failed to open block state", "err", err)
 		return nil, err
 	}
 	if tree.Version() != bc.LatestBlock().Header.Height.Int64() {
-		bc.logger.Error("version mismatch", "stateVersion", tree.Version(), "latestBlock", bc.LatestBlock().Header.Height)
+		bc.Logger.Error("version mismatch", "stateVersion", tree.Version(), "latestBlock", bc.LatestBlock().Header.Height)
 		return nil, errors.New("bad state version in db")
 	}
 	hash, err := tree.Hash()
 	if err != nil {
-		bc.logger.Error("failed to open block state", "err", err)
+		bc.Logger.Error("failed to open block state", "err", err)
 		return nil, err
 	}
 	if !bytes.Equal(hash, bc.LatestBlock().Header.Root) {
-		bc.logger.Error("root hash mismatch", "state", hash, "latestBlock", bc.LatestBlock().Header.Root)
+		bc.Logger.Error("root hash mismatch", "state", hash, "latestBlock", bc.LatestBlock().Header.Root)
 		return nil, errors.New("bad state hash in db")
 	}
 	return tree, nil

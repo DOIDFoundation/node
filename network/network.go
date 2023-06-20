@@ -111,8 +111,13 @@ func (n *Network) OnStart() error {
 	return nil
 }
 
+// OnStop stops the Network. It implements service.Service.
+func (n *Network) OnStop() {
+	core.EventInstance().RemoveListener(n.String())
+}
+
 func (n *Network) registerEventHandlers() {
-	core.EventInstance().AddListenerForEvent(n.String(), types.EventNewBlock, func(data events.EventData) {
+	core.EventInstance().AddListenerForEvent(n.String(), types.EventNewMinedBlock, func(data events.EventData) {
 		b, err := rlp.EncodeToBytes(data.(*types.Block))
 		if err != nil {
 			n.Logger.Error("failed to encode block for broadcasting", "err", err)
@@ -149,7 +154,7 @@ func (n *Network) registerSubscribers() {
 			return
 		}
 		n.Logger.Debug("got message", "block", block.Hash(), "header", block.Header)
-		// @todo handle block message
+		core.EventInstance().FireEvent(types.EventNewNetworkBlock, block)
 	}
 
 	// The main message loop for receiving incoming messages from this subscription.
@@ -279,8 +284,4 @@ func (n *Network) setupDiscovery(h host.Host) error {
 	// setup mDNS discovery to find local peers
 	s := mdns.NewMdnsService(h, n.config.RendezvousString, &discoveryNotifee{h: h, Logger: n.Logger})
 	return s.Start()
-}
-
-// OnStop stops the Network. It implements service.Service.
-func (n *Network) OnStop() {
 }

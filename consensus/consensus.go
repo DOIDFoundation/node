@@ -12,6 +12,7 @@ import (
 
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/types"
+	"github.com/cometbft/cometbft/libs/events"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
 )
@@ -42,12 +43,26 @@ func New(chain *core.BlockChain, logger log.Logger) *Consensus {
 }
 
 func (c *Consensus) OnStart() error {
+	c.registerEventHandlers()
 	c.wg.Add(3)
 	go c.mainLoop()
 	go c.resultLoop()
 	go c.newWorkLoop()
 	c.start()
 	return nil
+}
+
+func (c *Consensus) OnStop() {
+	core.EventInstance().RemoveListener(c.String())
+	close(c.exitCh)
+	c.wg.Wait()
+}
+
+func (c *Consensus) registerEventHandlers() {
+	core.EventInstance().AddListenerForEvent(c.String(), types.EventNewChainHead, func(data events.EventData) {
+		// chain head changed, now commit a new work.
+		c.CommitWork()
+	})
 }
 
 // the main mining loop
@@ -81,6 +96,7 @@ func (c *Consensus) startMine(stop chan struct{}) error {
 		return err
 	}
 	rand := rand.New(rand.NewSource(seed.Int64()))
+	c.Logger.Info("start a new mine round", "threads", threads)
 	var pend sync.WaitGroup
 	for i := 0; i < threads; i++ {
 		pend.Add(1)
@@ -172,7 +188,7 @@ func (c *Consensus) resultLoop() {
 		select {
 		case block := <-c.resultCh:
 			c.chain.ApplyBlock(block)
-			core.EventInstance().FireEvent(types.EventNewBlock, block)
+			core.EventInstance().FireEvent(types.EventNewMinedBlock, block)
 			c.CommitWork()
 
 		case <-c.exitCh:
@@ -214,11 +230,6 @@ func (c *Consensus) CommitWork() {
 		c.Logger.Info("exiting, work not committed")
 		return
 	}
-}
-
-func (c *Consensus) OnStop() {
-	close(c.exitCh)
-	c.wg.Wait()
 }
 
 // Some weird constants to avoid constant memory allocs for them.
