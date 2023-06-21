@@ -27,7 +27,6 @@ type Consensus struct {
 	wg       sync.WaitGroup
 	taskCh   chan struct{}
 	resultCh chan *types.Block
-	startCh  chan struct{}
 	chain    *core.BlockChain
 }
 
@@ -35,7 +34,6 @@ func New(chain *core.BlockChain, logger log.Logger) *Consensus {
 	consensus := &Consensus{
 		taskCh:   make(chan struct{}),
 		resultCh: make(chan *types.Block),
-		startCh:  make(chan struct{}),
 		chain:    chain,
 	}
 	consensus.BaseService = *service.NewBaseService(logger.With("module", "consensus"), "Consensus", consensus)
@@ -48,13 +46,12 @@ func (c *Consensus) OnStart() error {
 	go c.mainLoop()
 	go c.resultLoop()
 	go c.newWorkLoop()
-	c.startCh <- struct{}{}
 	return nil
 }
 
-// Wait blocks until all routines return.
-func (c *Consensus) Wait() {
+func (c *Consensus) OnReset() error {
 	c.wg.Wait()
+	return nil
 }
 
 func (c *Consensus) registerEventHandlers() {
@@ -65,11 +62,11 @@ func (c *Consensus) registerEventHandlers() {
 	core.EventInstance().AddListenerForEvent(c.String(), types.EventSyncStarted, func(data events.EventData) {
 		// Enter syncing, now stop mining.
 		c.Stop()
+		c.Reset()
 	})
 	core.EventInstance().AddListenerForEvent(c.String(), types.EventSyncFinished, func(data events.EventData) {
 		// Sync finished, now start mining.
-		c.Logger.Info("got sync finished")
-		c.Start()
+		c.Start() // May fail if still stopping, but will start on next sync finished event when stopped.
 	})
 }
 
@@ -216,15 +213,12 @@ func (c *Consensus) resultLoop() {
 func (c *Consensus) newWorkLoop() {
 	defer c.wg.Done()
 
-	timer := time.NewTimer(0)
-	defer timer.Stop()
-	<-timer.C // discard the initial tick
 	recommit := 1 * time.Second
+	timer := time.NewTimer(recommit)
+	defer timer.Stop()
 
 	for {
 		select {
-		case <-c.startCh:
-			timer.Reset(recommit)
 		case <-timer.C:
 			c.commitWork()
 			timer.Reset(recommit)
