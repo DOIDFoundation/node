@@ -53,6 +53,7 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 
 	RegisterAPI(node)
 	doid.RegisterAPI(node.chain)
+	node.mempool.RegisterAPI()
 
 	return node, nil
 }
@@ -60,6 +61,9 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 // OnStart starts the Node. It implements service.Service.
 func (n *Node) OnStart() error {
 	if err := n.rpc.Start(); err != nil {
+		return err
+	}
+	if err := n.mempool.Start(); err != nil {
 		return err
 	}
 	if err := n.network.Start(); err != nil {
@@ -77,6 +81,7 @@ func (n *Node) OnStop() {
 	}
 	n.rpc.Stop()
 	n.network.Stop()
+	n.mempool.Stop()
 
 	n.chain.Close()
 }

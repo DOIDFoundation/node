@@ -45,7 +45,7 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 	if err != nil {
 		return nil, err
 	}
-	core.EventInstance().FireEvent(types.EventNewTx, t)
+	core.EventInstance().FireEvent(types.EventNewTx, &t)
 	return t.Hash(), nil
 }
 

@@ -5,80 +5,70 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/types"
+	"github.com/cometbft/cometbft/libs/events"
 	"github.com/cometbft/cometbft/libs/log"
+	"github.com/cometbft/cometbft/libs/service"
 	"github.com/ethereum/go-ethereum/event"
 )
 
 // NewTxsEvent is posted when a batch of transactions enter the transaction pool.
 type NewTxsEvent struct{ Tx *types.Tx }
 
-// blockChain provides the state of blockchain and current gas limit to do
-// some pre checks in tx pool and event subscribers.
-type blockChain interface {
-	CurrentBlock() *types.Block
-	// GetBlock(hash common.Hash, number uint64) *types.Block
-	// StateAt(root common.Hash) (*state.StateDB, error)
-
-	SubscribeChainHeadEvent(ch chan<- types.ChainHeadEvent) event.Subscription
-}
-
 const (
 	chainHeadChanSize = 10
 )
 
 var (
-
-	evictionInterval    = time.Minute     // Time interval to check for evictable transactions
+	evictionInterval = time.Minute // Time interval to check for evictable transactions
 )
 
 var (
-	
-	ErrAlreadyKnown = errors.New("already known")
+	ErrAlreadyKnown   = errors.New("already known")
 	ErrTxPoolOverflow = errors.New("txpool is full")
 )
 
-
 type Mempool struct {
-
-	chain       blockChain
-	scope       event.SubscriptionScope
-	txFeed      event.Feed
-	mu          sync.RWMutex
+	service.BaseService
+	chain  *core.BlockChain
+	txFeed event.Feed
+	mu     sync.RWMutex
 
 	// pending map[common.Address]*txList   // All currently processable transactions
 	// queue   map[common.Address]*txList   // Queued but non-processable transactions
-	all     *txLookup                    // All transactions to allow lookups
+	all *txLookup // All transactions to allow lookups
 
 	reqResetCh      chan *txpoolResetRequest
 	chainHeadCh     chan types.ChainHeadEvent
 	chainHeadSub    event.Subscription
-	queueTxEventCh	chan *types.Tx
-	reorgShutdownCh chan struct{}  // requests shutdown of scheduleReorgLoop
+	queueTxEventCh  chan *types.Tx
+	reorgShutdownCh chan struct{} // requests shutdown of scheduleReorgLoop
 	reorgDoneCh     chan chan struct{}
 	wg              sync.WaitGroup // tracks loop, scheduleReorgLoop
-
-	logger log.Logger
 }
 
 type txpoolResetRequest struct {
 	oldHead, newHead *types.Header
 }
 
-func NewMempool(chain blockChain, logger log.Logger)*Mempool{
+func NewMempool(chain *core.BlockChain, logger log.Logger) *Mempool {
 	pool := &Mempool{
-
 		chain:           chain,
+		all:             newTxLookup(),
 		chainHeadCh:     make(chan types.ChainHeadEvent, chainHeadChanSize),
 		queueTxEventCh:  make(chan *types.Tx),
 		reorgShutdownCh: make(chan struct{}),
 		reorgDoneCh:     make(chan chan struct{}),
 		reqResetCh:      make(chan *txpoolResetRequest),
-
-		logger: logger,
 	}
+	pool.BaseService = *service.NewBaseService(logger.With("module", "mempool"), "mempool", pool)
+	pool.registerEventHandlers()
+	return pool
+}
 
-	pool.reset(nil, types.CopyHeader(chain.CurrentBlock().Header))
+func (pool *Mempool) OnStart() error {
+	pool.reset(nil, types.CopyHeader(pool.chain.CurrentBlock().Header))
 
 	pool.wg.Add(1)
 	go pool.scheduleReorgLoop()
@@ -86,28 +76,35 @@ func NewMempool(chain blockChain, logger log.Logger)*Mempool{
 	pool.chainHeadSub = pool.chain.SubscribeChainHeadEvent(pool.chainHeadCh)
 	pool.wg.Add(1)
 	go pool.loop()
-	return pool
+	return nil
 }
 
-// SubscribeNewTxsEvent registers a subscription of NewTxsEvent and
-// starts sending event to the given channel.
-func (pool *Mempool) SubscribeNewTxsEvent(ch chan<- NewTxsEvent) event.Subscription {
-	return pool.scope.Track(pool.txFeed.Subscribe(ch))
+func (pool *Mempool) registerEventHandlers() {
+	core.EventInstance().AddListenerForEvent(pool.String(), types.EventNewTx, func(data events.EventData) {
+		pool.AddLocal(data.(*types.Tx))
+	})
 }
 
-func (pool *Mempool) loop(){
+func (pool *Mempool) Stats() (int, int) {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+
+	return pool.all.LocalCount(), pool.all.RemoteCount()
+}
+
+func (pool *Mempool) loop() {
 	defer pool.wg.Done()
 
 	var (
-		evict   = time.NewTicker(evictionInterval)
+		evict = time.NewTicker(evictionInterval)
 		block = pool.chain.CurrentBlock()
 	)
 
-	for{
-		select{
+	for {
+		select {
 		// Handle ChainHeadEvent
 		case ev := <-pool.chainHeadCh:
-			if ev.Block !=nil{
+			if ev.Block != nil {
 				pool.requestReset(block.Header, ev.Block.Header)
 				block = ev.Block
 			}
@@ -132,7 +129,7 @@ func (pool *Mempool) loop(){
 			// 	}
 			// }
 			pool.mu.Unlock()
-	}
+		}
 	}
 }
 
@@ -155,50 +152,48 @@ func (pool *Mempool) queueTxEvent(tx *types.Tx) {
 	}
 }
 
-func (pool *Mempool) validateTx(tx *types.Tx) (err error){
+func (pool *Mempool) validateTx(tx *types.Tx) (err error) {
 	return nil
 }
 
-func (pool *Mempool) AddLocals(txs []*types.Tx)(error){
+func (pool *Mempool) AddLocals(txs []*types.Tx) error {
 	errs := pool.AddTxs(txs)
 	return errs[0]
 }
-	
 
-func (pool *Mempool) AddLocal(tx *types.Tx)(error){
+func (pool *Mempool) AddLocal(tx *types.Tx) error {
 	return pool.AddLocals([]*types.Tx{tx})
 }
 
-func (pool *Mempool) add(tx *types.Tx, local bool)(replaced bool, err error){
+func (pool *Mempool) add(tx *types.Tx, local bool) (replaced bool, err error) {
 	hash := tx.Key()
 	if pool.all.Get(hash) != nil {
 		return false, ErrAlreadyKnown
 	}
-	if err := pool.validateTx(tx); err!= nil {
+	if err := pool.validateTx(tx); err != nil {
 		return false, err
 	}
 
 	// check pool is full
-	if pool.all.Slots() + numSlots(tx) > 100 {
+	if pool.all.Slots()+numSlots(tx) > 100 {
 		return false, ErrTxPoolOverflow
 	}
 	pool.queueTxEvent(tx)
 
 	err = pool.enqueueTx(hash, tx)
-	if err != nil{
+	if err != nil {
 		return false, err
 	}
 
 	return false, nil
 }
 
-
-func (pool *Mempool) enqueueTx(hash types.TxHash, tx *types.Tx) (error) {
+func (pool *Mempool) enqueueTx(hash types.TxHash, tx *types.Tx) error {
 	pool.all.Add(tx, true)
-	return  nil
+	return nil
 }
 
-func (pool *Mempool) AddTxs(txs []*types.Tx)[]error{
+func (pool *Mempool) AddTxs(txs []*types.Tx) []error {
 	var (
 		errs = make([]error, len(txs))
 		news = make([]*types.Tx, 0, len(txs))
@@ -218,9 +213,9 @@ func (pool *Mempool) AddTxs(txs []*types.Tx)[]error{
 
 	// Process all the new transaction and merge any errors into the original slice
 	pool.mu.Lock()
-	var newErrs []error
+	newErrs := make([]error, len(txs))
 	for i, tx := range txs {
-		_, err := pool.add(tx, true)	
+		_, err := pool.add(tx, true)
 		newErrs[i] = err
 	}
 	pool.mu.Unlock()
@@ -236,27 +231,27 @@ func (pool *Mempool) AddTxs(txs []*types.Tx)[]error{
 	return errs
 }
 
-func (pool *Mempool) scheduleReorgLoop(){
+func (pool *Mempool) scheduleReorgLoop() {
 	defer pool.wg.Done()
 
-	var(
+	var (
 		curDone       chan struct{} // non-nil while runReorg is active
 		nextDone      = make(chan struct{})
 		launchNextRun bool
 		reset         *txpoolResetRequest
-		queuedTx 	*types.Tx
+		queuedTx      *types.Tx
 	)
 
-	for{
+	for {
 		if curDone == nil && launchNextRun {
-			go pool.runReorg(nextDone , reset , queuedTx)
+			go pool.runReorg(nextDone, reset, queuedTx)
 			curDone, nextDone = nextDone, make(chan struct{})
 			launchNextRun = false
 			queuedTx = nil
 			reset = nil
 		}
 
-		select{
+		select {
 		case req := <-pool.reqResetCh:
 			// Reset request: update head if request is already pending.
 			if reset == nil {
@@ -274,7 +269,7 @@ func (pool *Mempool) scheduleReorgLoop(){
 	}
 }
 
-func (pool *Mempool) runReorg(done chan struct{}, reset *txpoolResetRequest, tx *types.Tx){
+func (pool *Mempool) runReorg(done chan struct{}, reset *txpoolResetRequest, tx *types.Tx) {
 	defer close(done)
 
 	pool.mu.Lock()
@@ -290,15 +285,13 @@ func (pool *Mempool) runReorg(done chan struct{}, reset *txpoolResetRequest, tx 
 	pool.txFeed.Send(NewTxsEvent{tx})
 }
 
-
-func (pool *Mempool) reset (soldHead, newHead *types.Header){
+func (pool *Mempool) reset(soldHead, newHead *types.Header) {
 
 	// Initialize
 	if newHead == nil {
 		newHead = pool.chain.CurrentBlock().Header
-	}	
+	}
 }
-
 
 // txLookup is used internally by TxPool to track transactions while allowing
 // lookup without mutex contention.
@@ -476,5 +469,5 @@ func (t *txLookup) Remove(hash types.TxHash) {
 // numSlots calculates the number of slots needed for a single transaction.
 func numSlots(tx *types.Tx) int {
 	// return int((tx.Size() + txSlotSize - 1) / txSlotSize)
-	return 1;
+	return 1
 }
