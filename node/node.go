@@ -3,6 +3,8 @@ package node
 import (
 	"github.com/DOIDFoundation/node/consensus"
 	"github.com/DOIDFoundation/node/core"
+	"github.com/DOIDFoundation/node/doid"
+	"github.com/DOIDFoundation/node/mempool"
 	"github.com/DOIDFoundation/node/network"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/cometbft/cometbft/libs/log"
@@ -19,6 +21,7 @@ type Node struct {
 	rpc    *rpc.RPC
 
 	chain     *core.BlockChain
+	mempool   *mempool.Mempool
 	consensus *consensus.Consensus
 	network   *network.Network
 }
@@ -39,6 +42,7 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 
 		chain:     chain,
 		consensus: consensus.New(chain, logger),
+		mempool:   mempool.NewMempool(chain, logger),
 		network:   network.NewNetwork(logger),
 	}
 	node.BaseService = *service.NewBaseService(logger.With("module", "node"), "Node", node)
@@ -48,6 +52,7 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 	}
 
 	RegisterAPI(node)
+	doid.RegisterAPI(node.chain)
 
 	return node, nil
 }

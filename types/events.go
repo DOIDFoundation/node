@@ -5,6 +5,7 @@ const (
 	EventNewChainHead    = "NewChainHead"
 	EventNewMinedBlock   = "NewMinedBlock"
 	EventNewNetworkBlock = "NewNetworkBlock"
+	EventNewTx           = "NewTx"
 	EventSyncStarted     = "SyncStarted"
 	EventSyncFinished    = "SyncFinished"
 )
