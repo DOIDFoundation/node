@@ -2,6 +2,8 @@ package network
 
 import (
 	"context"
+	"fmt"
+	"github.com/libp2p/go-libp2p/core/network"
 	"sync"
 
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
@@ -27,6 +29,7 @@ import (
 var peerPool = make(map[string]peer.AddrInfo)
 var ctx = context.Background()
 var send = Send{}
+var msgChannel = make(chan string)
 
 type Network struct {
 	service.BaseService
@@ -36,13 +39,16 @@ type Network struct {
 	routingDiscovery *drouting.RoutingDiscovery
 	pubsub           *pubsub.PubSub
 	topicBlock       *pubsub.Topic
+	topicBlockInfo   *pubsub.Topic
+	topicBlockHeight *pubsub.Topic
+	chain            *core.BlockChain
 }
 
 // Option sets a parameter for the network.
 type Option func(*Network)
 
 // NewNetwork returns a new, ready to go, CometBFT Node.
-func NewNetwork(logger log.Logger) *Network {
+func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	network := &Network{
 		config: &DefaultConfig,
 	}
@@ -104,7 +110,7 @@ func (n *Network) OnStart() error {
 	n.localHost = localHost
 
 	n.registerEventHandlers()
-	n.registerSubscribers()
+	n.registerBlockSubscribers()
 
 	go n.Bootstrap(localHost, kademliaDHT)
 
@@ -128,7 +134,7 @@ func (n *Network) registerEventHandlers() {
 	})
 }
 
-func (n *Network) registerSubscribers() {
+func (n *Network) registerBlockSubscribers() {
 	// @todo use different topic for different fork
 	topic, err := n.pubsub.Join("/doid/block")
 	if err != nil {
@@ -205,6 +211,8 @@ func (n *Network) Bootstrap(newNode host.Host, kademliaDHT *dht.IpfsDHT) {
 	}
 	wg.Wait()
 
+	go n.publishBlockHeight()
+
 	// We use a rendezvous point "meet me here" to announce our location.
 	// This is like telling your friends to meet you at the Eiffel Tower.
 	//n.Logger.Info("Announcing ourselves...", n.config.RendezvousString)
@@ -255,6 +263,19 @@ func (n *Network) Bootstrap(newNode host.Host, kademliaDHT *dht.IpfsDHT) {
 //	}
 //}
 
+func (n *Network) publishBlockHeight() {
+	for {
+		msg := <-msgChannel
+		blockHeightRequest := BlockHeightRequest{BlockHeight: n.chain.LatestBlock().Header.Height}
+		b, err := rlp.EncodeToBytes(blockHeightRequest)
+		if err != nil {
+			n.Logger.Error("failed to encode block for broadcasting", "err", err)
+			return
+		}
+		n.topicBlockHeight.Publish(ctx, b)
+	}
+}
+
 // discoveryNotifee gets notified when we find a new peer via mDNS discovery
 type discoveryNotifee struct {
 	h      host.Host
@@ -274,6 +295,8 @@ func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 		n.Logger.Info("error connecting to peer ", pi.ID.Pretty(), ": ", err)
 	}
 	n.Logger.Info("connected to peer ", pi.ID.Pretty())
+
+	msgChannel <- pi.ID.String()
 }
 
 const DiscoveryServiceTag = "doid-network"

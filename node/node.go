@@ -39,7 +39,7 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 
 		chain:     chain,
 		consensus: consensus.New(chain, logger),
-		network:   network.NewNetwork(logger),
+		network:   network.NewNetwork(chain, logger),
 	}
 	node.BaseService = *service.NewBaseService(logger.With("module", "node"), "Node", node)
 
@@ -75,7 +75,6 @@ func (n *Node) OnStop() {
 	n.chain.Close()
 }
 
-func (n *Node) Chain() *core.BlockChain{
+func (n *Node) Chain() *core.BlockChain {
 	return n.chain
 }
-
