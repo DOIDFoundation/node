@@ -8,15 +8,10 @@ type API struct {
 	node *Node
 }
 
-type Status struct {
-	IsRunning bool `json:"is_running"`
-}
-
-func (api *API) Status() Status {
-	return Status{IsRunning: api.node.IsRunning()}
+func (api *API) Status() map[string]bool {
+	return map[string]bool{"is_running": api.node.IsRunning()}
 }
 
 func RegisterAPI(node *Node) {
-	api := &API{node: node}
-	rpc.RegisterName("node", api)
+	rpc.RegisterName("node", &API{node: node})
 }

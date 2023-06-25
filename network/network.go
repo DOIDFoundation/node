@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/libp2p/go-libp2p/core/network"
 	"sync"
+	"time"
 
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 
@@ -29,7 +30,6 @@ import (
 var peerPool = make(map[string]peer.AddrInfo)
 var ctx = context.Background()
 var send = Send{}
-var msgChannel = make(chan string)
 
 type Network struct {
 	service.BaseService
@@ -54,6 +54,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	}
 	network.BaseService = *service.NewBaseService(logger.With("module", "network"), "Network", network)
 
+	network.registerEventHandlers()
 	return network
 }
 
@@ -109,8 +110,7 @@ func (n *Network) OnStart() error {
 	n.pubsub = ps
 	n.localHost = localHost
 
-	n.registerEventHandlers()
-	n.registerBlockSubscribers()
+	n.registerSubscribers()
 
 	go n.Bootstrap(localHost, kademliaDHT)
 
@@ -123,7 +123,17 @@ func (n *Network) OnStop() {
 }
 
 func (n *Network) registerEventHandlers() {
+	core.EventInstance().AddListenerForEvent(n.String(), types.EventForkDetected, func(data events.EventData) {
+		// @todo handle fork event
+		core.EventInstance().FireEvent(types.EventSyncStarted, nil)
+		time.Sleep(time.Second)
+		core.EventInstance().FireEvent(types.EventSyncFinished, nil)
+	})
 	core.EventInstance().AddListenerForEvent(n.String(), types.EventNewMinedBlock, func(data events.EventData) {
+		if n.topicBlock == nil {
+			n.Logger.Info("not broadcasting, new block topic not joined")
+			return
+		}
 		b, err := rlp.EncodeToBytes(data.(*types.Block))
 		if err != nil {
 			n.Logger.Error("failed to encode block for broadcasting", "err", err)
@@ -210,6 +220,7 @@ func (n *Network) Bootstrap(newNode host.Host, kademliaDHT *dht.IpfsDHT) {
 		}()
 	}
 	wg.Wait()
+	core.EventInstance().FireEvent(types.EventSyncFinished, nil)
 
 	go n.publishBlockHeight()
 
@@ -263,19 +274,6 @@ func (n *Network) Bootstrap(newNode host.Host, kademliaDHT *dht.IpfsDHT) {
 //	}
 //}
 
-func (n *Network) publishBlockHeight() {
-	for {
-		msg := <-msgChannel
-		blockHeightRequest := BlockHeightRequest{BlockHeight: n.chain.LatestBlock().Header.Height}
-		b, err := rlp.EncodeToBytes(blockHeightRequest)
-		if err != nil {
-			n.Logger.Error("failed to encode block for broadcasting", "err", err)
-			return
-		}
-		n.topicBlockHeight.Publish(ctx, b)
-	}
-}
-
 // discoveryNotifee gets notified when we find a new peer via mDNS discovery
 type discoveryNotifee struct {
 	h      host.Host
@@ -295,8 +293,6 @@ func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 		n.Logger.Info("error connecting to peer ", pi.ID.Pretty(), ": ", err)
 	}
 	n.Logger.Info("connected to peer ", pi.ID.Pretty())
-
-	msgChannel <- pi.ID.String()
 }
 
 const DiscoveryServiceTag = "doid-network"

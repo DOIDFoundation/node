@@ -8,7 +8,9 @@ const (
 
 	Log_Level = "log.level"
 
-	RPC_Addr = "rpc.addr"
+	Mine_Threads = "mine.threads"
 
 	P2P_Addr = "p2p.addr"
+
+	RPC_Addr = "rpc.addr"
 )

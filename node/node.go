@@ -19,6 +19,7 @@ type Node struct {
 	rpc    *rpc.RPC
 
 	chain     *core.BlockChain
+	mempool   *mempool.Mempool
 	consensus *consensus.Consensus
 	network   *network.Network
 }
@@ -40,6 +41,8 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 		chain:     chain,
 		consensus: consensus.New(chain, logger),
 		network:   network.NewNetwork(chain, logger),
+		mempool:   mempool.NewMempool(chain, logger),
+		network:   network.NewNetwork(logger),
 	}
 	node.BaseService = *service.NewBaseService(logger.With("module", "node"), "Node", node)
 
@@ -48,6 +51,8 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 	}
 
 	RegisterAPI(node)
+	doid.RegisterAPI(node.chain)
+	node.mempool.RegisterAPI()
 
 	return node, nil
 }
@@ -57,10 +62,10 @@ func (n *Node) OnStart() error {
 	if err := n.rpc.Start(); err != nil {
 		return err
 	}
-	if err := n.network.Start(); err != nil {
+	if err := n.mempool.Start(); err != nil {
 		return err
 	}
-	if err := n.consensus.Start(); err != nil {
+	if err := n.network.Start(); err != nil {
 		return err
 	}
 	return nil
@@ -68,9 +73,14 @@ func (n *Node) OnStart() error {
 
 // OnStop stops the Node. It implements service.Service.
 func (n *Node) OnStop() {
-	n.consensus.Stop()
+	if n.consensus.IsRunning() {
+		n.consensus.Stop()
+		defer n.Logger.Info("waiting for consensus to finish stopping")
+		defer n.consensus.Wait()
+	}
 	n.rpc.Stop()
 	n.network.Stop()
+	n.mempool.Stop()
 
 	n.chain.Close()
 }

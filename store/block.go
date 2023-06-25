@@ -32,6 +32,18 @@ func NewBlockStore(logger log.Logger) (*BlockStore, error) {
 	}, nil
 }
 
+func (bs *BlockStore) ReadBlockByHeight(height uint64) *types.Block {
+	hash, err := bs.db.Get(headerKey(height))
+	if err != nil {
+		panic(err)
+	}
+
+	if len(hash) == 0 {
+		return nil
+	}
+	return bs.ReadBlock(hash)
+}
+
 func (bs *BlockStore) ReadBlock(hash types.Hash) *types.Block {
 	header := bs.ReadHeader(hash)
 	if header == nil {
@@ -117,7 +129,10 @@ func (bs *BlockStore) WriteHeader(header *types.Header) {
 		return
 	}
 	if err := bs.db.Set(hash, data); err != nil {
-		bs.logger.Error("failed to store header", "err", err, "height", height, "hash", hash)
+		bs.logger.Error("failed to store header by hash", "err", err, "height", height, "hash", hash)
+	}
+	if err := bs.db.Set(headerKey(height), hash); err != nil {
+		bs.logger.Error("failed to store header hash by height", "err", err, "height", height, "hash", hash)
 	}
 }
 
@@ -144,11 +159,11 @@ func (bs *BlockStore) Close() error {
 	return bs.db.Close()
 }
 
-func headerKey(height int64) []byte {
+func headerKey(height uint64) []byte {
 	return []byte(fmt.Sprintf("H:%v", height))
 }
 
-func dataKey(height int64) []byte {
+func dataKey(height uint64) []byte {
 	return []byte(fmt.Sprintf("D:%v", height))
 }
 
