@@ -27,7 +27,6 @@ import (
 // ------------------------------------------------------------------------------
 var peerPool = make(map[string]peer.AddrInfo)
 var ctx = context.Background()
-var send = Send{}
 var maxHeight uint64
 var msgChannel = make(chan string)
 
