@@ -65,6 +65,7 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 			Root:       hexutil.MustDecode("0xE3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"),
 			TxHash:     hexutil.MustDecode("0xE3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"),
 		})
+		bc.SetHead(block)
 	}
 	bc.latestBlock = block
 
@@ -104,6 +105,10 @@ func (bc *BlockChain) SetHead(block *types.Block) {
 	bc.blockStore.WriteHeadBlockHash(block.Hash())
 	EventInstance().FireEvent(types.EventNewChainHead, block)
 	bc.latestBlock = block
+}
+
+func (bc *BlockChain) BlockByHeight(height uint64) *types.Block {
+	return bc.blockStore.ReadBlockByHeight(height)
 }
 
 // CurrentBlock retrieves the current head block of the canonical chain. The

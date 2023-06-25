@@ -20,6 +20,18 @@ func newBlockChain(t *testing.T) *core.BlockChain {
 	return chain
 }
 
+func advanceBlock(t *testing.T, chain *core.BlockChain, txs types.Txs) {
+	hash, _ := chain.Simulate(txs)
+	block := chain.LatestBlock()
+	header := types.CopyHeader(block.Header)
+	header.ParentHash = header.Hash()
+	header.Height.Add(header.Height, common.Big1)
+	header.Root = hash
+	newBlock := types.NewBlockWithHeader(header)
+	newBlock.Data = types.Data{Txs: txs}
+	assert.NoError(t, chain.ApplyBlock(newBlock))
+}
+
 func TestNewBlockchain(t *testing.T) {
 	chain := newBlockChain(t)
 	assert.Zero(t, chain.LatestBlock().Header.Height.Cmp(common.Big0))
@@ -52,4 +64,12 @@ func TestApplyBlock(t *testing.T) {
 	assert.Equal(t, block.Hash(), newBlock.Header.ParentHash)
 	assert.Equal(t, newBlock.Hash(), chain.LatestBlock().Hash())
 	assert.NotEqual(t, block.Hash(), chain.LatestBlock().Hash())
+}
+
+func TestBlockByHeight(t *testing.T) {
+	chain := newBlockChain(t)
+	assert.NotNil(t, chain.BlockByHeight(0))
+	assert.Nil(t, chain.BlockByHeight(1))
+	advanceBlock(t, chain, types.Txs{})
+	assert.NotNil(t, chain.BlockByHeight(1))
 }
