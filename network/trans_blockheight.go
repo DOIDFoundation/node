@@ -1,15 +1,13 @@
 package network
 
 import (
-	"bytes"
-	"encoding/gob"
 	"github.com/ethereum/go-ethereum/rlp"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
-func (n *Network) registerBlockInfoSubscribers() {
+func (n *Network) registerBlockGetSubscribers() {
 	// @todo use different topic for different fork
-	topic, err := n.pubsub.Join("/doid/block_height")
+	topic, err := n.pubsub.Join("/doid/block_get")
 	if err != nil {
 		n.Logger.Error("Failed to join pubsub topic", "err", err)
 		return
@@ -20,7 +18,7 @@ func (n *Network) registerBlockInfoSubscribers() {
 		n.Logger.Error("Failed to subscribe to pubsub topic", "err", err)
 		return
 	}
-	n.topicBlockHeight = topic
+	n.topicBlockGet = topic
 
 	// Pipeline decodes the incoming subscription data, runs the validation, and handles the
 	// message.
@@ -35,14 +33,14 @@ func (n *Network) registerBlockInfoSubscribers() {
 		n.Logger.Debug("got message", "block height", blockHeight.Height)
 
 		if n.chain.LatestBlock().Header.Height.Int64() > blockHeight.Height.Int64() {
-			n.chain.
-				blockHeightRequest := BlockHeight{Height: n.chain.LatestBlock().Header.Height + 1}
-			b, err := rlp.EncodeToBytes(blockHeightRequest)
+			block := n.chain.BlockByHeight(blockHeight.Height.Uint64())
+
+			b, err := rlp.EncodeToBytes(block)
 			if err != nil {
 				n.Logger.Error("failed to encode block for broadcasting", "err", err)
 				return
 			}
-			n.topicBlockHeight.Publish(ctx, b)
+			n.topicBlock.Publish(ctx, b)
 		}
 	}
 

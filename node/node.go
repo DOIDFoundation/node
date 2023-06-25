@@ -3,6 +3,8 @@ package node
 import (
 	"github.com/DOIDFoundation/node/consensus"
 	"github.com/DOIDFoundation/node/core"
+	"github.com/DOIDFoundation/node/doid"
+	"github.com/DOIDFoundation/node/mempool"
 	"github.com/DOIDFoundation/node/network"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/cometbft/cometbft/libs/log"
@@ -42,7 +44,6 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 		consensus: consensus.New(chain, logger),
 		network:   network.NewNetwork(chain, logger),
 		mempool:   mempool.NewMempool(chain, logger),
-		network:   network.NewNetwork(logger),
 	}
 	node.BaseService = *service.NewBaseService(logger.With("module", "node"), "Node", node)
 

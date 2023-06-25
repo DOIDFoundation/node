@@ -1,10 +1,9 @@
 package network
 
 import (
-	"bytes"
-	"encoding/gob"
 	"github.com/ethereum/go-ethereum/rlp"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"math/big"
 )
 
 func (n *Network) registerBlockInfoSubscribers() {
@@ -34,14 +33,15 @@ func (n *Network) registerBlockInfoSubscribers() {
 		}
 		n.Logger.Debug("got message", "block height", blockInfo.Height)
 
+		maxHeight = blockInfo.Height.Uint64()
 		if n.chain.LatestBlock().Header.Height.Int64() < blockInfo.Height.Int64() {
-			blockHeightRequest := BlockHeight{Height: n.chain.LatestBlock().Header.Height + 1}
-			b, err := rlp.EncodeToBytes(blockHeightRequest)
+			blockHeight := BlockHeight{Height: big.NewInt(n.chain.LatestBlock().Header.Height.Int64() + 1)}
+			b, err := rlp.EncodeToBytes(blockHeight)
 			if err != nil {
 				n.Logger.Error("failed to encode block for broadcasting", "err", err)
 				return
 			}
-			n.topicBlockHeight.Publish(ctx, b)
+			n.topicBlockGet.Publish(ctx, b)
 		}
 	}
 

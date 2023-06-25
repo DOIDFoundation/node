@@ -1,15 +1,15 @@
 package network
 
 import (
-	"bytes"
-	"encoding/gob"
+	"github.com/DOIDFoundation/node/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"math/big"
 )
 
-func (n *Network) registerBlockHeightSubscribers() {
+func (n *Network) registerBlockSubscribers() {
 	// @todo use different topic for different fork
-	topic, err := n.pubsub.Join("/doid/block_height")
+	topic, err := n.pubsub.Join("/doid/blocks")
 	if err != nil {
 		n.Logger.Error("Failed to join pubsub topic", "err", err)
 		return
@@ -20,28 +20,34 @@ func (n *Network) registerBlockHeightSubscribers() {
 		n.Logger.Error("Failed to subscribe to pubsub topic", "err", err)
 		return
 	}
-	n.topicBlockHeight = topic
+	n.topicBlock = topic
 
 	// Pipeline decodes the incoming subscription data, runs the validation, and handles the
 	// message.
 	pipeline := func(msg *pubsub.Message) {
 		data := msg.GetData()
-		blockHeight := new(BlockHeightRequest)
-		err := rlp.DecodeBytes(data, blockHeight)
+		block := new(types.Block)
+		err := rlp.DecodeBytes(data, block)
 		if err != nil {
 			n.Logger.Error("failed to decode received block", "err", err)
 			return
 		}
-		n.Logger.Debug("got message", "block height", blockHeight.BlockHeight)
+		n.Logger.Debug("got message", "block height", block.Header.Height)
 
-		if n.chain.LatestBlock().Header.Height.Int64() < blockHeight.BlockHeight.Int64() {
-			blockHeightRequest := BlockHeightRequest{BlockHeight: n.chain.LatestBlock().Header.Height + 1}
-			b, err := rlp.EncodeToBytes(blockHeightRequest)
+		if n.chain.LatestBlock().Header.Height.Int64() < block.Header.Height.Int64() {
+			err = n.chain.ApplyBlock(block)
 			if err != nil {
-				n.Logger.Error("failed to encode block for broadcasting", "err", err)
-				return
+				if n.chain.LatestBlock().Header.Height.Uint64() < maxHeight {
+					blockHeight := BlockHeight{Height: big.NewInt(n.chain.LatestBlock().Header.Height.Int64() + 1)}
+					b, err := rlp.EncodeToBytes(blockHeight)
+					if err != nil {
+						n.Logger.Error("failed to encode block for broadcasting", "err", err)
+						return
+					}
+					n.topicBlockGet.Publish(ctx, b)
+				}
 			}
-			n.topicBlockHeight.Publish(ctx, b)
+
 		}
 	}
 

@@ -2,8 +2,6 @@ package network
 
 import (
 	"context"
-	"fmt"
-	"github.com/libp2p/go-libp2p/core/network"
 	"sync"
 	"time"
 
@@ -30,6 +28,8 @@ import (
 var peerPool = make(map[string]peer.AddrInfo)
 var ctx = context.Background()
 var send = Send{}
+var maxHeight uint64
+var msgChannel = make(chan string)
 
 type Network struct {
 	service.BaseService
@@ -40,7 +40,7 @@ type Network struct {
 	pubsub           *pubsub.PubSub
 	topicBlock       *pubsub.Topic
 	topicBlockInfo   *pubsub.Topic
-	topicBlockHeight *pubsub.Topic
+	topicBlockGet    *pubsub.Topic
 	chain            *core.BlockChain
 }
 
@@ -110,7 +110,9 @@ func (n *Network) OnStart() error {
 	n.pubsub = ps
 	n.localHost = localHost
 
-	n.registerSubscribers()
+	n.registerBlockInfoSubscribers()
+	n.registerBlockGetSubscribers()
+	n.registerBlockSubscribers()
 
 	go n.Bootstrap(localHost, kademliaDHT)
 
@@ -142,61 +144,6 @@ func (n *Network) registerEventHandlers() {
 		n.Logger.Debug("topic peers", "peers", n.topicBlock.ListPeers())
 		n.topicBlock.Publish(ctx, b)
 	})
-}
-
-func (n *Network) registerBlockSubscribers() {
-	// @todo use different topic for different fork
-	topic, err := n.pubsub.Join("/doid/block")
-	if err != nil {
-		n.Logger.Error("Failed to join pubsub topic", "err", err)
-		return
-	}
-	sub, err := topic.Subscribe()
-	if err != nil {
-		topic.Close()
-		n.Logger.Error("Failed to subscribe to pubsub topic", "err", err)
-		return
-	}
-	n.topicBlock = topic
-
-	// Pipeline decodes the incoming subscription data, runs the validation, and handles the
-	// message.
-	pipeline := func(msg *pubsub.Message) {
-		data := msg.GetData()
-		block := new(types.Block)
-		err := rlp.DecodeBytes(data, block)
-		if err != nil {
-			n.Logger.Error("failed to decode received block", "err", err)
-			return
-		}
-		n.Logger.Debug("got message", "block", block.Hash(), "header", block.Header)
-		core.EventInstance().FireEvent(types.EventNewNetworkBlock, block)
-	}
-
-	// The main message loop for receiving incoming messages from this subscription.
-	messageLoop := func() {
-		for {
-			msg, err := sub.Next(ctx)
-			if err != nil {
-				// This should only happen when the context is cancelled or subscription is cancelled.
-				if err != pubsub.ErrSubscriptionCancelled { // Only log an error on unexpected errors.
-					n.Logger.Error("Subscription next failed", "err", err)
-				}
-				// Cancel subscription in the event of an error, as we are
-				// now exiting topic event loop.
-				sub.Cancel()
-				return
-			}
-
-			if msg.ReceivedFrom == n.localHost.ID() {
-				continue
-			}
-
-			go pipeline(msg)
-		}
-	}
-
-	go messageLoop()
 }
 
 func (n *Network) Bootstrap(newNode host.Host, kademliaDHT *dht.IpfsDHT) {
@@ -280,6 +227,20 @@ type discoveryNotifee struct {
 	Logger log.Logger
 }
 
+func (n *Network) publishBlockHeight() {
+	for {
+		msg := <-msgChannel
+		n.Logger.Info("receive msg", "content", msg)
+		blockHeight := BlockHeight{Height: n.chain.LatestBlock().Header.Height}
+		b, err := rlp.EncodeToBytes(blockHeight)
+		if err != nil {
+			n.Logger.Error("failed to encode block for broadcasting", "err", err)
+			return
+		}
+		n.topicBlockInfo.Publish(ctx, b)
+	}
+}
+
 // HandlePeerFound connects to peers discovered via mDNS. Once they're connected,
 // the PubSub system will automatically start interacting with them if they also
 // support PubSub.
@@ -293,6 +254,8 @@ func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 		n.Logger.Info("error connecting to peer ", pi.ID.Pretty(), ": ", err)
 	}
 	n.Logger.Info("connected to peer ", pi.ID.Pretty())
+
+	msgChannel <- pi.ID.String()
 }
 
 const DiscoveryServiceTag = "doid-network"
