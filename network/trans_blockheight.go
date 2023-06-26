@@ -6,7 +6,6 @@ import (
 )
 
 func (n *Network) registerBlockGetSubscribers() {
-	// @todo use different topic for different fork
 	topic, err := n.pubsub.Join("/doid/block_get")
 	if err != nil {
 		n.Logger.Error("Failed to join pubsub topic", "err", err)
@@ -19,6 +18,7 @@ func (n *Network) registerBlockGetSubscribers() {
 		return
 	}
 	n.topicBlockGet = topic
+	n.Logger.Info("create topic block_get")
 
 	// Pipeline decodes the incoming subscription data, runs the validation, and handles the
 	// message.
@@ -30,10 +30,10 @@ func (n *Network) registerBlockGetSubscribers() {
 			n.Logger.Error("failed to decode received block", "err", err)
 			return
 		}
-		n.Logger.Debug("got message", "block height", blockHeight.Height)
+		n.Logger.Info("got message block_height", "block height", blockHeight.Height)
 
-		if n.chain.LatestBlock().Header.Height.Int64() > blockHeight.Height.Int64() {
-			block := n.chain.BlockByHeight(blockHeight.Height.Uint64())
+		if n.blockChain.LatestBlock().Header.Height.Int64() > blockHeight.Height.Int64() {
+			block := n.blockChain.BlockByHeight(blockHeight.Height.Uint64())
 
 			b, err := rlp.EncodeToBytes(block)
 			if err != nil {
@@ -59,6 +59,7 @@ func (n *Network) registerBlockGetSubscribers() {
 				return
 			}
 
+			n.Logger.Info("topic block_height msg from ", msg.ReceivedFrom)
 			if msg.ReceivedFrom == n.localHost.ID() {
 				continue
 			}
