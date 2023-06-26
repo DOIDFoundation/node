@@ -45,9 +45,10 @@ func TestNewBlockchain(t *testing.T) {
 func TestSimulate(t *testing.T) {
 	var txs types.Txs
 	chain := newBlockChain(t)
-	hash, err := chain.Simulate(txs)
+	result, err := chain.Simulate(txs)
 	assert.NoError(t, err)
-	assert.NotZero(t, hash)
+	assert.NotZero(t, result.StateRoot)
+	assert.NotZero(t, result.ReceiptRoot)
 }
 
 func TestApplyBlock(t *testing.T) {

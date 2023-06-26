@@ -61,7 +61,7 @@ type Header struct {
 	Difficulty  *big.Int   `json:"difficulty"       gencodec:"required"`
 	Height      *big.Int   `json:"height"           gencodec:"required"`
 	Time        time.Time  `json:"timestamp"        gencodec:"required"`
-	Extra       []byte     `json:"extraData"        gencodec:"required"`
+	Extra       HexBytes   `json:"extraData"        gencodec:"required"`
 	Nonce       BlockNonce `json:"nonce"`
 }
 

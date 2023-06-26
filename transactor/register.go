@@ -9,26 +9,26 @@ import (
 	"github.com/cosmos/iavl"
 )
 
-func applyRegister(tree *iavl.MutableTree, encoded *encodedtx.EncodedTx) (types.TxStatus, error) {
+func applyRegister(tree *iavl.MutableTree, encoded *encodedtx.EncodedTx) (resultCode, error) {
 	var register tx.Register
 	if err := encoded.Decode(&register); err != nil {
-		return types.TxStatusRejected, err
+		return resRejected, err
 	}
 	key := []byte(register.DOID)
 	has, err := tree.Has(key)
 	if err != nil {
-		return types.TxStatusRejected, err
+		return resRejected, err
 	}
 
 	if has {
-		return types.TxStatusFailed, errors.New("name exists")
+		return resRejected, errors.New("name exists")
 	}
 
 	_, err = tree.Set(key, register.Owner)
 	if err != nil {
-		return types.TxStatusRejected, err
+		return resRejected, err
 	}
-	return types.TxStatusSuccess, nil
+	return resSuccess, nil
 }
 
 func init() {

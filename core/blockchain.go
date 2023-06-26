@@ -201,9 +201,12 @@ func (bc *BlockChain) ApplyBlock(block *types.Block) error {
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(block.Header.Root, result.StateRoot) {
+	if !bytes.Equal(block.Header.Root, result.StateRoot) ||
+		!bytes.Equal(block.Header.ReceiptHash, result.ReceiptRoot) ||
+		!bytes.Equal(block.Header.TxHash, result.TxRoot) {
 		state.Rollback()
-		return fmt.Errorf("state hash mismatch, block root %v, got %v", block.Header.Root, result.StateRoot)
+		bc.Logger.Debug("block apply result mismatch", "header", block.Header, "result", result)
+		return errors.New("block apply result mismatch")
 	}
 	// @todo process rejected txs and receipts
 
