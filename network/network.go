@@ -50,6 +50,7 @@ type Option func(*Network)
 func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	network := &Network{
 		config: &DefaultConfig,
+		chain:  chain,
 	}
 	network.BaseService = *service.NewBaseService(logger.With("module", "network"), "Network", network)
 

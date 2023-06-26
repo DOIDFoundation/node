@@ -56,7 +56,7 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 	headBlockHash := blockStore.ReadHeadBlockHash()
 	if headBlockHash != nil {
 		block = blockStore.ReadBlock(headBlockHash)
-		bc.Logger.Info("found head block", "hash", headBlockHash, "block", block)
+		bc.Logger.Info("found head block", "hash", headBlockHash, "header", block.Header)
 	}
 	if block == nil {
 		block = types.NewBlockWithHeader(&types.Header{
