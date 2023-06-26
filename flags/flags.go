@@ -8,6 +8,7 @@ const (
 
 	Log_Level = "log.level"
 
+	Mine_Enabled = "mine.enabled"
 	Mine_Threads = "mine.threads"
 
 	P2P_Addr = "p2p.addr"

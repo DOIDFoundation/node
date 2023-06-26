@@ -4,11 +4,13 @@ import (
 	"github.com/DOIDFoundation/node/consensus"
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/doid"
+	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/mempool"
 	"github.com/DOIDFoundation/node/network"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
+	"github.com/spf13/viper"
 )
 
 //------------------------------------------------------------------------------
@@ -37,13 +39,14 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 	}
 
 	node := &Node{
-		config: &DefaultConfig,
-		rpc:    rpc.NewRPC(logger),
-
-		chain:     chain,
-		consensus: consensus.New(chain, logger),
-		network:   network.NewNetwork(chain, logger),
-		mempool:   mempool.NewMempool(chain, logger),
+		config:  &DefaultConfig,
+		rpc:     rpc.NewRPC(logger),
+		chain:   chain,
+		network: network.NewNetwork(chain, logger),
+		mempool: mempool.NewMempool(chain, logger),
+	}
+	if viper.GetBool(flags.Mine_Enabled) {
+		node.consensus = consensus.New(chain, logger)
 	}
 	node.BaseService = *service.NewBaseService(logger.With("module", "node"), "Node", node)
 
@@ -77,7 +80,7 @@ func (n *Node) OnStop() {
 	n.network.Stop()
 	n.network.Wait()
 
-	if n.consensus.IsRunning() {
+	if n.consensus != nil && n.consensus.IsRunning() {
 		n.consensus.Stop()
 		n.consensus.Wait()
 	}
