@@ -66,7 +66,7 @@ func (n *Network) registerBlockInfoSubscribers() {
 			}
 
 			n.Logger.Info("step 2 topic block_info msg from ", msg.ReceivedFrom)
-			pipeline(msg)
+			go pipeline(msg)
 		}
 	}
 
