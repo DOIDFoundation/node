@@ -50,8 +50,12 @@ func (c *Consensus) OnStart() error {
 }
 
 func (c *Consensus) OnReset() error {
-	c.wg.Wait()
+	c.Wait()
 	return nil
+}
+
+func (c *Consensus) Wait() {
+	c.wg.Wait()
 }
 
 func (c *Consensus) registerEventHandlers() {

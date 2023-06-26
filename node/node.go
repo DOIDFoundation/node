@@ -74,14 +74,19 @@ func (n *Node) OnStart() error {
 
 // OnStop stops the Node. It implements service.Service.
 func (n *Node) OnStop() {
+	n.network.Stop()
+	n.network.Wait()
+
 	if n.consensus.IsRunning() {
 		n.consensus.Stop()
-		defer n.Logger.Info("waiting for consensus to finish stopping")
-		defer n.consensus.Wait()
+		n.consensus.Wait()
 	}
+
 	n.rpc.Stop()
-	n.network.Stop()
 	n.mempool.Stop()
+
+	n.rpc.Wait()
+	n.mempool.Wait()
 
 	n.chain.Close()
 }
