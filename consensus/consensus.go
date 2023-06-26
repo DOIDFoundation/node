@@ -28,6 +28,8 @@ type Consensus struct {
 	taskCh   chan struct{}
 	resultCh chan *types.Block
 	chain    *core.BlockChain
+	current  *types.Block // current working block
+	target   *big.Int     // current difficulty target
 }
 
 func New(chain *core.BlockChain, logger log.Logger) *Consensus {
@@ -50,8 +52,12 @@ func (c *Consensus) OnStart() error {
 }
 
 func (c *Consensus) OnReset() error {
-	c.wg.Wait()
+	c.Wait()
 	return nil
+}
+
+func (c *Consensus) Wait() {
+	c.wg.Wait()
 }
 
 func (c *Consensus) registerEventHandlers() {
@@ -146,20 +152,16 @@ func (c *Consensus) startMine(stop chan struct{}) error {
 // actual mining function
 func (c *Consensus) mine(id int, seed uint64, abort chan struct{}, found chan *types.Block) {
 	var (
-		parent    = c.chain.LatestBlock()
-		target    = new(big.Int).Div(two256, parent.Header.Difficulty)
+		target    = c.target
 		attempts  = int64(0)
 		nonce     = seed
 		powBuffer = new(big.Int)
 		logger    = c.Logger.With("miner", id)
+		block     = types.NewBlockWithHeader(c.current.Header)
+		header    = block.Header
 	)
 
-	block := types.NewBlockWithHeader(parent.Header)
-	header := block.Header
-	header.ParentHash = parent.Hash()
-	header.Time = time.Now()
-	header.Height.Add(header.Height, big.NewInt(1))
-	header.Difficulty.Set(calcDifficulty(header.Time, parent.Header))
+	block.Data = c.current.Data
 
 	logger.Debug("started search for new nonces", "seed", seed, "target", target.Text(16))
 
@@ -199,7 +201,9 @@ func (c *Consensus) resultLoop() {
 	for {
 		select {
 		case block := <-c.resultCh:
-			c.chain.ApplyBlock(block)
+			if err := c.chain.ApplyBlock(block); err != nil {
+				c.Logger.Error("error applying found block", "err", err)
+			}
 			core.EventInstance().FireEvent(types.EventNewMinedBlock, block)
 			c.commitWork()
 
@@ -229,6 +233,30 @@ func (c *Consensus) newWorkLoop() {
 }
 
 func (c *Consensus) commitWork() {
+	result, err := c.chain.Simulate(types.Txs{})
+	if err != nil {
+		c.Logger.Error("failed to simulate transactions", "err", err)
+		return
+	}
+
+	var (
+		parent = c.chain.LatestBlock()
+		block  = types.NewBlockWithHeader(parent.Header)
+		header = block.Header
+	)
+
+	c.target = new(big.Int).Div(two256, header.Difficulty)
+
+	header.ParentHash = parent.Hash()
+	header.Time = time.Now()
+	header.Height.Add(header.Height, big.NewInt(1))
+	header.Difficulty.Set(calcDifficulty(header.Time, parent.Header))
+	header.Root = result.StateRoot
+	header.TxHash = result.TxRoot
+	header.ReceiptHash = result.ReceiptRoot
+
+	c.current = block
+
 	select {
 	case c.taskCh <- struct{}{}:
 	case <-c.Quit():

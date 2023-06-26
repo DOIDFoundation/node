@@ -56,7 +56,7 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 	headBlockHash := blockStore.ReadHeadBlockHash()
 	if headBlockHash != nil {
 		block = blockStore.ReadBlock(headBlockHash)
-		bc.Logger.Info("found head block", "hash", headBlockHash, "block", block)
+		bc.Logger.Info("found head block", "hash", headBlockHash, "header", block.Header)
 	}
 	if block == nil {
 		block = types.NewBlockWithHeader(&types.Header{
@@ -176,7 +176,7 @@ func (bc *BlockChain) mutableState() (*iavl.MutableTree, error) {
 	return tree, err
 }
 
-func (bc *BlockChain) Simulate(txs types.Txs) (types.Hash, error) {
+func (bc *BlockChain) Simulate(txs types.Txs) (*transactor.ExecutionResult, error) {
 	state, err := bc.mutableState()
 	if err != nil {
 		return nil, err
@@ -197,14 +197,18 @@ func (bc *BlockChain) ApplyBlock(block *types.Block) error {
 		return err
 	}
 
-	hash, err := transactor.ApplyTxs(state, block.Data.Txs)
+	result, err := transactor.ApplyTxs(state, block.Data.Txs)
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(block.Header.Root, hash) {
+	if !bytes.Equal(block.Header.Root, result.StateRoot) ||
+		!bytes.Equal(block.Header.ReceiptHash, result.ReceiptRoot) ||
+		!bytes.Equal(block.Header.TxHash, result.TxRoot) {
 		state.Rollback()
-		return fmt.Errorf("state hash mismatch, block root %v, got %v", block.Header.Root, hash)
+		bc.Logger.Debug("block apply result mismatch", "header", block.Header, "result", result)
+		return errors.New("block apply result mismatch")
 	}
+	// @todo process rejected txs and receipts
 
 	hash, version, err := state.SaveVersion()
 	if err != nil {

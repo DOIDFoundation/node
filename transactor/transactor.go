@@ -6,16 +6,87 @@ import (
 	"github.com/cosmos/iavl"
 )
 
-func ApplyTxs(tree *iavl.MutableTree, txs types.Txs) (types.Hash, error) {
-	for _, t := range txs {
+type resultCode = uint8
+
+// Transaction result codes, append only.
+const (
+	resSuccess  resultCode = iota
+	resFailed              // will be included in block
+	resRejected            // should be rejected from block
+	resLater               // should be retried later
+)
+
+type ApplyFunc = func(tree *iavl.MutableTree, encoded *encodedtx.EncodedTx) (resultCode, error)
+
+var appliers = map[types.TxType]ApplyFunc{}
+
+func registerApplyFunc(t types.TxType, f ApplyFunc) {
+	appliers[t] = f
+}
+
+type rejectedTx struct {
+	Index int    `json:"index"`
+	Err   string `json:"error"`
+}
+
+type ExecutionResult struct {
+	StateRoot   types.Hash     `json:"stateRoot"`
+	TxRoot      types.Hash     `json:"txRoot"`
+	Txs         types.Txs      `json:"txs"`
+	ReceiptRoot types.Hash     `json:"receiptsRoot"`
+	Receipts    types.Receipts `json:"receipts"`
+	Rejected    []*rejectedTx  `json:"rejected,omitempty"`
+	Pending     []int          `json:"pending,omitempty"`
+}
+
+func ApplyTxs(tree *iavl.MutableTree, txs types.Txs) (*ExecutionResult, error) {
+	var (
+		rejectedTxs []*rejectedTx
+		pendingTxs  []int
+		includedTxs types.Txs
+		receipts    = make(types.Receipts, 0)
+	)
+	for i, t := range txs {
 		encoded, err := encodedtx.FromTx(t)
 		if err != nil {
-			return nil, err
+			rejectedTxs = append(rejectedTxs, &rejectedTx{i, err.Error()})
+			continue
 		}
-		switch encoded.Type {
-		case types.TxTypeRegister:
-			applyRegister(tree, encoded)
+		applier := appliers[encoded.Type]
+		if applier == nil {
+			rejectedTxs = append(rejectedTxs, &rejectedTx{i, "unknown transaction type"})
+			continue
 		}
+		code, err := applier(tree, encoded)
+		switch code {
+		case resRejected:
+			rejectedTxs = append(rejectedTxs, &rejectedTx{i, err.Error()})
+			continue
+		case resLater:
+			pendingTxs = append(pendingTxs, i)
+			continue
+		}
+		includedTxs = append(includedTxs, t)
+		receipt := &types.Receipt{
+			TxHash: t.Hash(),
+		}
+		if err != nil {
+			receipt.Result = []byte(err.Error())
+		}
+		receipts = append(receipts, receipt)
 	}
-	return tree.WorkingHash()
+	root, err := tree.WorkingHash()
+	if err != nil {
+		return nil, err
+	}
+	execRs := &ExecutionResult{
+		StateRoot:   root,
+		TxRoot:      includedTxs.Hash(),
+		Txs:         includedTxs,
+		ReceiptRoot: receipts.Hash(),
+		Receipts:    receipts,
+		Rejected:    rejectedTxs,
+		Pending:     pendingTxs,
+	}
+	return execRs, nil
 }
