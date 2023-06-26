@@ -42,8 +42,8 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 
 		chain:     chain,
 		consensus: consensus.New(chain, logger),
+		network:   network.NewNetwork(chain, logger),
 		mempool:   mempool.NewMempool(chain, logger),
-		network:   network.NewNetwork(logger),
 	}
 	node.BaseService = *service.NewBaseService(logger.With("module", "node"), "Node", node)
 
