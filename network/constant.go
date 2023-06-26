@@ -2,7 +2,7 @@ package network
 
 var (
 	RendezvousString = "meetme"
-	ProtocolID       = "/chain/2"
+	ProtocolID       = "/blockChain/2"
 	ListenHost       = "0.0.0.0"
 	ListenPort       = "3001"
 	localAddr        string

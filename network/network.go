@@ -40,7 +40,7 @@ type Network struct {
 	topicBlock       *pubsub.Topic
 	topicBlockInfo   *pubsub.Topic
 	topicBlockGet    *pubsub.Topic
-	chain            *core.BlockChain
+	blockChain       *core.BlockChain
 }
 
 // Option sets a parameter for the network.
@@ -49,8 +49,8 @@ type Option func(*Network)
 // NewNetwork returns a new, ready to go, CometBFT Node.
 func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	network := &Network{
-		config: &DefaultConfig,
-		chain:  chain,
+		config:     &DefaultConfig,
+		blockChain: chain,
 	}
 	network.BaseService = *service.NewBaseService(logger.With("module", "network"), "Network", network)
 
@@ -231,8 +231,8 @@ func (n *Network) publishBlockHeight() {
 	for {
 		msg := <-msgChannel
 		n.Logger.Info("receive msg", "content", msg)
-		blockHeight := BlockHeight{Height: n.chain.LatestBlock().Header.Height}
-		b, err := rlp.EncodeToBytes(blockHeight)
+		blockInfo := BlockInfo{Height: n.blockChain.LatestBlock().Header.Height}
+		b, err := rlp.EncodeToBytes(blockInfo)
 		if err != nil {
 			n.Logger.Error("failed to encode block for broadcasting", "err", err)
 			return

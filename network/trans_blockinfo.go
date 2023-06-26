@@ -7,7 +7,6 @@ import (
 )
 
 func (n *Network) registerBlockInfoSubscribers() {
-	// @todo use different topic for different fork
 	topic, err := n.pubsub.Join("/doid/block_info")
 	if err != nil {
 		n.Logger.Error("Failed to join pubsub topic", "err", err)
@@ -20,6 +19,7 @@ func (n *Network) registerBlockInfoSubscribers() {
 		return
 	}
 	n.topicBlockInfo = topic
+	n.Logger.Info("create topic block_info")
 
 	// Pipeline decodes the incoming subscription data, runs the validation, and handles the
 	// message.
@@ -31,11 +31,11 @@ func (n *Network) registerBlockInfoSubscribers() {
 			n.Logger.Error("failed to decode received block", "err", err)
 			return
 		}
-		n.Logger.Debug("got message", "block height", blockInfo.Height)
+		n.Logger.Info("got message block info", "block info", blockInfo.Height)
 
 		maxHeight = blockInfo.Height.Uint64()
-		if n.chain.LatestBlock().Header.Height.Int64() < blockInfo.Height.Int64() {
-			blockHeight := BlockHeight{Height: big.NewInt(n.chain.LatestBlock().Header.Height.Int64() + 1)}
+		if n.blockChain.LatestBlock().Header.Height.Int64() < blockInfo.Height.Int64() {
+			blockHeight := BlockHeight{Height: big.NewInt(n.blockChain.LatestBlock().Header.Height.Int64() + 1)}
 			b, err := rlp.EncodeToBytes(blockHeight)
 			if err != nil {
 				n.Logger.Error("failed to encode block for broadcasting", "err", err)
@@ -60,10 +60,12 @@ func (n *Network) registerBlockInfoSubscribers() {
 				return
 			}
 
+			n.Logger.Info("topic block_info msg from ", msg.ReceivedFrom)
 			if msg.ReceivedFrom == n.localHost.ID() {
 				continue
 			}
 
+			n.Logger.Info("step 2 topic block_info msg from ", msg.ReceivedFrom)
 			go pipeline(msg)
 		}
 	}
