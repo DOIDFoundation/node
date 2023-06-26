@@ -53,15 +53,16 @@ func (b *Block) Hash() Hash {
 }
 
 type Header struct {
-	ParentHash Hash       `json:"parentHash"       gencodec:"required"`
-	Miner      Address    `json:"miner"            gencodec:"required"`
-	Root       Hash       `json:"stateRoot"        gencodec:"required"`
-	TxHash     Hash       `json:"transactionsRoot" gencodec:"required"`
-	Difficulty *big.Int   `json:"difficulty"       gencodec:"required"`
-	Height     *big.Int   `json:"height"           gencodec:"required"`
-	Time       time.Time  `json:"timestamp"        gencodec:"required"`
-	Extra      []byte     `json:"extraData"        gencodec:"required"`
-	Nonce      BlockNonce `json:"nonce"`
+	ParentHash  Hash       `json:"parentHash"       gencodec:"required"`
+	Miner       Address    `json:"miner"            gencodec:"required"`
+	Root        Hash       `json:"stateRoot"        gencodec:"required"`
+	TxHash      Hash       `json:"transactionsRoot" gencodec:"required"`
+	ReceiptHash Hash       `json:"receiptsRoot" 	gencodec:"required"`
+	Difficulty  *big.Int   `json:"difficulty"       gencodec:"required"`
+	Height      *big.Int   `json:"height"           gencodec:"required"`
+	Time        time.Time  `json:"timestamp"        gencodec:"required"`
+	Extra       []byte     `json:"extraData"        gencodec:"required"`
+	Nonce       BlockNonce `json:"nonce"`
 }
 
 func (h *Header) Hash() Hash {

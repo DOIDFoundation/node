@@ -21,12 +21,14 @@ func newBlockChain(t *testing.T) *core.BlockChain {
 }
 
 func advanceBlock(t *testing.T, chain *core.BlockChain, txs types.Txs) {
-	hash, _ := chain.Simulate(txs)
+	result, err := chain.Simulate(txs)
+	assert.NoError(t, err)
 	block := chain.LatestBlock()
 	header := types.CopyHeader(block.Header)
 	header.ParentHash = header.Hash()
 	header.Height.Add(header.Height, common.Big1)
-	header.Root = hash
+	header.Root = result.StateRoot
+	header.ReceiptHash = result.ReceiptRoot
 	newBlock := types.NewBlockWithHeader(header)
 	newBlock.Data = types.Data{Txs: txs}
 	assert.NoError(t, chain.ApplyBlock(newBlock))
@@ -51,12 +53,14 @@ func TestSimulate(t *testing.T) {
 func TestApplyBlock(t *testing.T) {
 	var txs types.Txs
 	chain := newBlockChain(t)
-	hash, _ := chain.Simulate(txs)
+	result, err := chain.Simulate(txs)
+	assert.NoError(t, err)
 	block := chain.LatestBlock()
 	header := types.CopyHeader(block.Header)
 	header.ParentHash = header.Hash()
 	header.Height.Add(header.Height, common.Big1)
-	header.Root = hash
+	header.Root = result.StateRoot
+	header.ReceiptHash = result.ReceiptRoot
 	newBlock := types.NewBlockWithHeader(header)
 	newBlock.Data = types.Data{Txs: txs}
 	assert.NoError(t, chain.ApplyBlock(newBlock))

@@ -176,7 +176,7 @@ func (bc *BlockChain) mutableState() (*iavl.MutableTree, error) {
 	return tree, err
 }
 
-func (bc *BlockChain) Simulate(txs types.Txs) (types.Hash, error) {
+func (bc *BlockChain) Simulate(txs types.Txs) (*transactor.ExecutionResult, error) {
 	state, err := bc.mutableState()
 	if err != nil {
 		return nil, err
@@ -197,14 +197,15 @@ func (bc *BlockChain) ApplyBlock(block *types.Block) error {
 		return err
 	}
 
-	hash, err := transactor.ApplyTxs(state, block.Data.Txs)
+	result, err := transactor.ApplyTxs(state, block.Data.Txs)
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(block.Header.Root, hash) {
+	if !bytes.Equal(block.Header.Root, result.StateRoot) {
 		state.Rollback()
-		return fmt.Errorf("state hash mismatch, block root %v, got %v", block.Header.Root, hash)
+		return fmt.Errorf("state hash mismatch, block root %v, got %v", block.Header.Root, result.StateRoot)
 	}
+	// @todo process rejected txs and receipts
 
 	hash, version, err := state.SaveVersion()
 	if err != nil {

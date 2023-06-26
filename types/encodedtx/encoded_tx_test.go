@@ -43,7 +43,7 @@ func TestTxRegister(t *testing.T) {
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
-	should, _ := hex.DecodeString("ca8088c784646f69648080")
+	should, _ := hex.DecodeString("cb8089c884646f6964808080")
 	assert.Equal(t, should, txb, "encoded RLP mismatch")
 
 	// decode
