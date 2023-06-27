@@ -1,25 +1,28 @@
 package network
 
 import (
+	"math/big"
+
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"math/big"
 )
 
 func (n *Network) registerBlockInfoSubscribers() {
+	logger := n.Logger.With("topic", "block_info")
 	topic, err := n.pubsub.Join("/doid/block_info")
 	if err != nil {
-		n.Logger.Error("Failed to join pubsub topic", "err", err)
+		logger.Error("Failed to join pubsub topic", "err", err)
 		return
 	}
 	sub, err := topic.Subscribe()
 	if err != nil {
 		topic.Close()
-		n.Logger.Error("Failed to subscribe to pubsub topic", "err", err)
+		logger.Error("Failed to subscribe to pubsub topic", "err", err)
 		return
 	}
 	n.topicBlockInfo = topic
-	n.Logger.Info("create topic block_info")
+	logger.Info("topic joined")
 
 	// Pipeline decodes the incoming subscription data, runs the validation, and handles the
 	// message.
@@ -28,20 +31,24 @@ func (n *Network) registerBlockInfoSubscribers() {
 		blockInfo := new(BlockInfo)
 		err := rlp.DecodeBytes(data, blockInfo)
 		if err != nil {
-			n.Logger.Error("failed to decode received block", "err", err)
+			logger.Error("failed to decode received block", "err", err)
 			return
 		}
-		n.Logger.Info("got message block info", "block info", blockInfo.Height)
+		logger.Debug("got message block info", "height", blockInfo.Height, "peer", msg.GetFrom())
 
-		maxHeight = blockInfo.Height.Uint64()
-		if n.blockChain.LatestBlock().Header.Height.Int64() < blockInfo.Height.Int64() {
-			blockHeight := BlockHeight{Height: big.NewInt(n.blockChain.LatestBlock().Header.Height.Int64() + 1)}
-			b, err := rlp.EncodeToBytes(blockHeight)
-			if err != nil {
-				n.Logger.Error("failed to encode block for broadcasting", "err", err)
-				return
-			}
-			n.topicBlockGet.Publish(ctx, b)
+		store := n.localHost.Peerstore()
+		store.Put(msg.GetFrom(), "height", blockInfo.Height)
+		if n.networkHeight.Cmp(blockInfo.Height) < 0 {
+			n.networkHeight.Set(blockInfo.Height)
+		}
+
+		switch n.blockChain.LatestBlock().Header.Height.Cmp(blockInfo.Height) {
+		case -1:
+			logger.Info("we are behind, start sync", "ours", n.blockChain.LatestBlock().Header.Height)
+			n.publishBlockGet(big.NewInt(0).Add(n.blockChain.LatestBlock().Header.Height, common.Big1))
+		case 0:
+		case 1:
+			peerNotifier <- msg.GetFrom().String()
 		}
 	}
 
@@ -52,7 +59,7 @@ func (n *Network) registerBlockInfoSubscribers() {
 			if err != nil {
 				// This should only happen when the context is cancelled or subscription is cancelled.
 				if err != pubsub.ErrSubscriptionCancelled { // Only log an error on unexpected errors.
-					n.Logger.Error("Subscription next failed", "err", err)
+					logger.Error("Subscription next failed", "err", err)
 				}
 				// Cancel subscription in the event of an error, as we are
 				// now exiting topic event loop.
@@ -60,12 +67,10 @@ func (n *Network) registerBlockInfoSubscribers() {
 				return
 			}
 
-			n.Logger.Info("topic block_info msg from ", msg.ReceivedFrom)
 			if msg.ReceivedFrom == n.localHost.ID() {
 				continue
 			}
-
-			n.Logger.Info("step 2 topic block_info msg from ", msg.ReceivedFrom)
+			logger.Debug("got msg", "peer", msg.GetFrom())
 			go pipeline(msg)
 		}
 	}

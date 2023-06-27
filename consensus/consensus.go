@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/DOIDFoundation/node/core"
+	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/types"
-	"github.com/cometbft/cometbft/libs/events"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
 	"github.com/spf13/viper"
@@ -61,16 +61,20 @@ func (c *Consensus) Wait() {
 }
 
 func (c *Consensus) registerEventHandlers() {
-	core.EventInstance().AddListenerForEvent(c.String(), types.EventNewChainHead, func(data events.EventData) {
-		// chain head changed, now commit a new work.
-		c.commitWork()
+	events.NewChainHead.Subscribe(c.String(), func(data *types.Block) {
+		if c.IsRunning() {
+			// chain head changed, now commit a new work.
+			c.commitWork()
+		}
 	})
-	core.EventInstance().AddListenerForEvent(c.String(), types.EventSyncStarted, func(data events.EventData) {
+	events.SyncStarted.Subscribe(c.String(), func(data struct{}) {
 		// Enter syncing, now stop mining.
-		c.Stop()
-		c.Reset()
+		if c.IsRunning() {
+			c.Stop()
+			c.Reset()
+		}
 	})
-	core.EventInstance().AddListenerForEvent(c.String(), types.EventSyncFinished, func(data events.EventData) {
+	events.SyncFinished.Subscribe(c.String(), func(data struct{}) {
 		// Sync finished, now start mining.
 		c.Start() // May fail if still stopping, but will start on next sync finished event when stopped.
 	})
@@ -203,8 +207,9 @@ func (c *Consensus) resultLoop() {
 		case block := <-c.resultCh:
 			if err := c.chain.ApplyBlock(block); err != nil {
 				c.Logger.Error("error applying found block", "err", err)
+			} else {
+				events.NewMinedBlock.Send(block)
 			}
-			core.EventInstance().FireEvent(types.EventNewMinedBlock, block)
 			c.commitWork()
 
 		case <-c.Quit():

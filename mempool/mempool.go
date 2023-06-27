@@ -6,15 +6,15 @@ import (
 	"time"
 
 	"github.com/DOIDFoundation/node/core"
+	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/types"
-	"github.com/cometbft/cometbft/libs/events"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
 	"github.com/ethereum/go-ethereum/event"
 )
 
 // NewTxsEvent is posted when a batch of transactions enter the transaction pool.
-type NewTxsEvent struct{ Tx *types.Tx }
+type NewTxsEvent struct{ Tx types.Tx }
 
 const (
 	chainHeadChanSize = 10
@@ -40,9 +40,8 @@ type Mempool struct {
 	all *txLookup // All transactions to allow lookups
 
 	reqResetCh      chan *txpoolResetRequest
-	chainHeadCh     chan types.ChainHeadEvent
 	chainHeadSub    event.Subscription
-	queueTxEventCh  chan *types.Tx
+	queueTxEventCh  chan types.Tx
 	reorgShutdownCh chan struct{} // requests shutdown of scheduleReorgLoop
 	reorgDoneCh     chan chan struct{}
 	wg              sync.WaitGroup // tracks loop, scheduleReorgLoop
@@ -56,8 +55,7 @@ func NewMempool(chain *core.BlockChain, logger log.Logger) *Mempool {
 	pool := &Mempool{
 		chain:           chain,
 		all:             newTxLookup(),
-		chainHeadCh:     make(chan types.ChainHeadEvent, chainHeadChanSize),
-		queueTxEventCh:  make(chan *types.Tx),
+		queueTxEventCh:  make(chan types.Tx),
 		reorgShutdownCh: make(chan struct{}),
 		reorgDoneCh:     make(chan chan struct{}),
 		reqResetCh:      make(chan *txpoolResetRequest),
@@ -73,15 +71,17 @@ func (pool *Mempool) OnStart() error {
 	pool.wg.Add(1)
 	go pool.scheduleReorgLoop()
 
-	pool.chainHeadSub = pool.chain.SubscribeChainHeadEvent(pool.chainHeadCh)
+	events.NewChainHead.Subscribe(pool.String(), func(block *types.Block) {
+		pool.requestReset(pool.chain.CurrentBlock().Header, block.Header)
+	})
 	pool.wg.Add(1)
 	go pool.loop()
 	return nil
 }
 
 func (pool *Mempool) registerEventHandlers() {
-	core.EventInstance().AddListenerForEvent(pool.String(), types.EventNewTx, func(data events.EventData) {
-		pool.AddLocal(data.(*types.Tx))
+	events.NewTx.Subscribe(pool.String(), func(data types.Tx) {
+		pool.AddLocal(data)
 	})
 }
 
@@ -97,21 +97,10 @@ func (pool *Mempool) loop() {
 
 	var (
 		evict = time.NewTicker(evictionInterval)
-		block = pool.chain.CurrentBlock()
 	)
 
 	for {
 		select {
-		// Handle ChainHeadEvent
-		case ev := <-pool.chainHeadCh:
-			if ev.Block != nil {
-				pool.requestReset(block.Header, ev.Block.Header)
-				block = ev.Block
-			}
-		// System shutdown.
-		case <-pool.chainHeadSub.Err():
-			close(pool.reorgShutdownCh)
-			return
 		case <-evict.C:
 			pool.mu.Lock()
 			// for addr := range pool.queue {
@@ -145,27 +134,27 @@ func (pool *Mempool) requestReset(oldHead *types.Header, newHead *types.Header) 
 }
 
 // queueTxEvent enqueues a transaction event to be sent in the next reorg run.
-func (pool *Mempool) queueTxEvent(tx *types.Tx) {
+func (pool *Mempool) queueTxEvent(tx types.Tx) {
 	select {
 	case pool.queueTxEventCh <- tx:
 	case <-pool.reorgShutdownCh:
 	}
 }
 
-func (pool *Mempool) validateTx(tx *types.Tx) (err error) {
+func (pool *Mempool) validateTx(tx types.Tx) (err error) {
 	return nil
 }
 
-func (pool *Mempool) AddLocals(txs []*types.Tx) error {
+func (pool *Mempool) AddLocals(txs []types.Tx) error {
 	errs := pool.AddTxs(txs)
 	return errs[0]
 }
 
-func (pool *Mempool) AddLocal(tx *types.Tx) error {
-	return pool.AddLocals([]*types.Tx{tx})
+func (pool *Mempool) AddLocal(tx types.Tx) error {
+	return pool.AddLocals(types.Txs{tx})
 }
 
-func (pool *Mempool) add(tx *types.Tx, local bool) (replaced bool, err error) {
+func (pool *Mempool) add(tx types.Tx, local bool) (replaced bool, err error) {
 	hash := tx.Key()
 	if pool.all.Get(hash) != nil {
 		return false, ErrAlreadyKnown
@@ -188,15 +177,15 @@ func (pool *Mempool) add(tx *types.Tx, local bool) (replaced bool, err error) {
 	return false, nil
 }
 
-func (pool *Mempool) enqueueTx(hash types.TxHash, tx *types.Tx) error {
+func (pool *Mempool) enqueueTx(hash types.TxHash, tx types.Tx) error {
 	pool.all.Add(tx, true)
 	return nil
 }
 
-func (pool *Mempool) AddTxs(txs []*types.Tx) []error {
+func (pool *Mempool) AddTxs(txs []types.Tx) []error {
 	var (
 		errs = make([]error, len(txs))
-		news = make([]*types.Tx, 0, len(txs))
+		news = make(types.Txs, 0, len(txs))
 	)
 	for i, tx := range txs {
 		// If the transaction is known, pre-set the error slot
@@ -239,7 +228,7 @@ func (pool *Mempool) scheduleReorgLoop() {
 		nextDone      = make(chan struct{})
 		launchNextRun bool
 		reset         *txpoolResetRequest
-		queuedTx      *types.Tx
+		queuedTx      types.Tx
 	)
 
 	for {
@@ -269,7 +258,7 @@ func (pool *Mempool) scheduleReorgLoop() {
 	}
 }
 
-func (pool *Mempool) runReorg(done chan struct{}, reset *txpoolResetRequest, tx *types.Tx) {
+func (pool *Mempool) runReorg(done chan struct{}, reset *txpoolResetRequest, tx types.Tx) {
 	defer close(done)
 
 	pool.mu.Lock()
@@ -308,22 +297,22 @@ func (pool *Mempool) reset(soldHead, newHead *types.Header) {
 type txLookup struct {
 	slots   int
 	lock    sync.RWMutex
-	locals  map[types.TxHash]*types.Tx
-	remotes map[types.TxHash]*types.Tx
+	locals  map[types.TxHash]types.Tx
+	remotes map[types.TxHash]types.Tx
 }
 
 // newTxLookup returns a new txLookup structure.
 func newTxLookup() *txLookup {
 	return &txLookup{
-		locals:  make(map[types.TxHash]*types.Tx),
-		remotes: make(map[types.TxHash]*types.Tx),
+		locals:  make(map[types.TxHash]types.Tx),
+		remotes: make(map[types.TxHash]types.Tx),
 	}
 }
 
 // Range calls f on each key and value present in the map. The callback passed
 // should return the indicator whether the iteration needs to be continued.
 // Callers need to specify which set (or both) to be iterated.
-func (t *txLookup) Range(f func(hash types.TxHash, tx *types.Tx, local bool) bool, local bool, remote bool) {
+func (t *txLookup) Range(f func(hash types.TxHash, tx types.Tx, local bool) bool, local bool, remote bool) {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
@@ -344,7 +333,7 @@ func (t *txLookup) Range(f func(hash types.TxHash, tx *types.Tx, local bool) boo
 }
 
 // Get returns a transaction if it exists in the lookup, or nil if not found.
-func (t *txLookup) Get(hash types.TxHash) *types.Tx {
+func (t *txLookup) Get(hash types.TxHash) types.Tx {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
@@ -355,7 +344,7 @@ func (t *txLookup) Get(hash types.TxHash) *types.Tx {
 }
 
 // GetLocal returns a transaction if it exists in the lookup, or nil if not found.
-func (t *txLookup) GetLocal(hash types.TxHash) *types.Tx {
+func (t *txLookup) GetLocal(hash types.TxHash) types.Tx {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
@@ -363,7 +352,7 @@ func (t *txLookup) GetLocal(hash types.TxHash) *types.Tx {
 }
 
 // GetRemote returns a transaction if it exists in the lookup, or nil if not found.
-func (t *txLookup) GetRemote(hash types.TxHash) *types.Tx {
+func (t *txLookup) GetRemote(hash types.TxHash) types.Tx {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
@@ -403,7 +392,7 @@ func (t *txLookup) Slots() int {
 }
 
 // Add adds a transaction to the lookup.
-func (t *txLookup) Add(tx *types.Tx, local bool) {
+func (t *txLookup) Add(tx types.Tx, local bool) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
@@ -467,7 +456,7 @@ func (t *txLookup) Remove(hash types.TxHash) {
 // }
 
 // numSlots calculates the number of slots needed for a single transaction.
-func numSlots(tx *types.Tx) int {
+func numSlots(tx types.Tx) int {
 	// return int((tx.Size() + txSlotSize - 1) / txSlotSize)
 	return 1
 }
