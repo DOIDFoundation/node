@@ -62,7 +62,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 func (n *Network) OnStart() error {
 	var opts []libp2p.Option
 	n.config.ListenAddresses = viper.GetString(flags.P2P_Addr)
-	n.config.RendezvousString = viper.GetString("rendezvous")
+	n.config.RendezvousString = viper.GetString(flags.P2P_Rendezvous)
 	m1, err := multiaddr.NewMultiaddr(n.config.ListenAddresses)
 	if err != nil {
 		return err

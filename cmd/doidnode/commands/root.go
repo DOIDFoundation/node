@@ -22,6 +22,7 @@ var RootCmd = &cobra.Command{
 	Use:   "doidnode",
 	Short: "DOID Network Node",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) (err error) {
+		viper.AddConfigPath(".")
 		if viper.GetBool(flags.Trace) {
 			logger = log.NewTracingLogger(logger)
 		}
