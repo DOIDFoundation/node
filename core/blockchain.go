@@ -52,20 +52,19 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 		stateDb:    db,
 	}
 
-	var block *types.Block = nil
-	headBlockHash := blockStore.ReadHeadBlockHash()
-	if headBlockHash != nil {
-		block = blockStore.ReadBlock(headBlockHash)
-		bc.Logger.Info("found head block", "hash", headBlockHash, "header", block.Header)
-	}
+	block := blockStore.ReadHeadBlock()
 	if block == nil {
+		bc.Logger.Info("no head block found, generate from genesis")
 		block = types.NewBlockWithHeader(&types.Header{
 			Difficulty: big.NewInt(0x1000000),
 			Height:     big.NewInt(0),
 			Root:       hexutil.MustDecode("0xE3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"),
 			TxHash:     hexutil.MustDecode("0xE3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"),
 		})
-		bc.SetHead(block)
+		bc.blockStore.WriteTd(block.Hash(), block.Header.Height.Uint64(), block.Header.Difficulty)
+		bc.writeHeadBlock(block)
+	} else {
+		bc.Logger.Info("load head block", "height", block.Header.Height, "header", block.Header)
 	}
 	bc.latestBlock = block
 
@@ -94,10 +93,17 @@ func (bc *BlockChain) registerEventHandlers() {
 	})
 }
 
-func (bc *BlockChain) SetHead(block *types.Block) {
-	bc.Logger.Info("head block", "block", block.Hash(), "header", block.Header)
+func (bc *BlockChain) writeHeadBlock(block *types.Block) {
 	bc.blockStore.WriteBlock(block)
 	bc.blockStore.WriteHeadBlockHash(block.Hash())
+}
+
+func (bc *BlockChain) SetHead(block *types.Block) {
+	bc.Logger.Info("head block", "block", block.Hash(), "header", block.Header)
+	td := bc.blockStore.ReadTd(bc.CurrentBlock().Hash(), bc.CurrentBlock().Header.Height.Uint64())
+	td.Add(td, block.Header.Difficulty)
+	bc.blockStore.WriteTd(block.Hash(), block.Header.Height.Uint64(), td)
+	bc.writeHeadBlock(block)
 	bc.latestBlock = block
 	events.NewChainHead.Send(block)
 }
