@@ -22,7 +22,7 @@ type Callback[T any] func(data T)
 type Subscription[T any] struct {
 	s event.Subscription
 	c chan T
-	w sync.WaitGroup
+	w *sync.WaitGroup
 }
 
 type FeedOf[T any] struct {
@@ -44,7 +44,7 @@ func (e *FeedOf[T]) Subscribe(id string, callback Callback[T]) {
 	e.once.Do(e.init)
 
 	e.Unsubscribe(id)
-	sub := &Subscription[T]{c: make(chan T)}
+	sub := &Subscription[T]{c: make(chan T), w: &sync.WaitGroup{}}
 	sub.s = e.feed.Subscribe(sub.c)
 	sub.w.Add(1)
 	go func() {
@@ -61,13 +61,14 @@ func (e *FeedOf[T]) Subscribe(id string, callback Callback[T]) {
 	e.subscriptions[id] = sub
 }
 
-func (e *FeedOf[T]) Unsubscribe(id string) {
+func (e *FeedOf[T]) Unsubscribe(id string) *sync.WaitGroup {
 	e.once.Do(e.init)
 
 	sub, ok := e.subscriptions[id]
 	if ok {
 		delete(e.subscriptions, id)
 		sub.s.Unsubscribe()
-		sub.w.Wait()
+		return sub.w
 	}
+	return &sync.WaitGroup{}
 }

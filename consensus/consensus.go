@@ -76,7 +76,8 @@ func (c *Consensus) registerEventHandlers() {
 	})
 	events.SyncFinished.Subscribe(c.String(), func(data struct{}) {
 		// Sync finished, now start mining.
-		c.Start() // May fail if still stopping, but will start on next sync finished event when stopped.
+		c.Wait()
+		c.Start()
 	})
 }
 

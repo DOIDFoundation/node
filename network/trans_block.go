@@ -34,11 +34,8 @@ func (n *Network) registerBlockSubscribers() {
 			return
 		}
 		logger.Debug("got message blocks", "height", block.Header.Height, "peer", msg.GetFrom())
-		logger.Debug("got message blocks", "ours", n.blockChain.LatestBlock().Header.Height)
 
-		if n.blockChain.LatestBlock().Header.Height.Cmp(block.Header.Height) < 0 {
-			events.NewNetworkBlock.Send(block)
-		}
+		events.NewNetworkBlock.Send(block)
 	}
 
 	// The main message loop for receiving incoming messages from this subscription.
@@ -59,7 +56,6 @@ func (n *Network) registerBlockSubscribers() {
 			if msg.ReceivedFrom == n.localHost.ID() {
 				continue
 			}
-			logger.Debug("got message", "peer", msg.GetFrom())
 
 			go pipeline(msg)
 		}

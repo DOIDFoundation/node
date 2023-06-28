@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/big"
 	"sync"
+	"sync/atomic"
 
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 
@@ -44,6 +45,7 @@ type Network struct {
 	topicBlockGet    *pubsub.Topic
 	blockChain       *core.BlockChain
 	networkHeight    *big.Int
+	sycing           atomic.Bool
 }
 
 // Option sets a parameter for the network.
@@ -131,22 +133,49 @@ func (n *Network) OnStop() {
 	events.NewMinedBlock.Unsubscribe(n.String())
 }
 
-func (n *Network) registerEventHandlers() {
-	events.NewChainHead.Subscribe(n.String(), func(block *types.Block) {
+func (n *Network) syncIfBehind(height *big.Int) {
+	if n.networkHeight.Cmp(height) < 0 {
+		n.networkHeight.Set(height)
+		if n.blockChain.LatestBlock().Header.Height.Cmp(height) < 0 {
+			n.Logger.Info("we are behind, start sync", "ours", n.blockChain.LatestBlock().Header.Height, "network", height)
+			n.startSync()
+		}
+	}
+}
+
+func (n *Network) startSync() {
+	if !n.sycing.CompareAndSwap(false, true) {
+		// already started
+		return
+	}
+	n.Logger.Info("start syncing")
+	events.SyncStarted.Send(struct{}{})
+	events.NewChainHead.Subscribe("network_sync", func(block *types.Block) {
 		height := block.Header.Height
-		n.Logger.Debug("got head event", "ours", height, "network", n.networkHeight)
 		if height.Cmp(n.networkHeight) < 0 {
+			n.Logger.Debug("sync in progress", "ours", height, "network", n.networkHeight)
 			n.publishBlockGet(big.NewInt(0).Add(height, common.Big1))
 		} else {
-			n.Logger.Info("caught up", "ours", height, "network", n.networkHeight)
-			events.SyncFinished.Send(struct{}{})
+			n.Logger.Info("sync caught up", "ours", height, "network", n.networkHeight)
+			n.stopSync()
 		}
 	})
+	n.publishBlockGet(big.NewInt(0).Add(n.blockChain.LatestBlock().Header.Height, common.Big1))
+}
+
+func (n *Network) stopSync() {
+	if !n.sycing.CompareAndSwap(true, false) {
+		// already stopped
+		return
+	}
+	events.NewChainHead.Unsubscribe("network_sync")
+	events.SyncFinished.Send(struct{}{})
+}
+
+func (n *Network) registerEventHandlers() {
 	events.ForkDetected.Subscribe(n.String(), func(data struct{}) {
 		// @todo handle fork event
-		// core.EventInstance().FireEvent(types.EventSyncStarted, nil)
-		// time.Sleep(time.Second)
-		// core.EventInstance().FireEvent(types.EventSyncFinished, nil)
+		n.startSync()
 	})
 	events.NewMinedBlock.Subscribe(n.String(), func(data *types.Block) {
 		if n.topicBlock == nil {

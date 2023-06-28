@@ -3,13 +3,11 @@ package network
 import (
 	"math/big"
 
-	"github.com/DOIDFoundation/node/events"
 	"github.com/ethereum/go-ethereum/rlp"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
 func (n *Network) publishBlockGet(height *big.Int) {
-	events.SyncStarted.Send(struct{}{})
 	blockGet <- height
 }
 
@@ -39,7 +37,7 @@ func (n *Network) registerBlockGetSubscribers() {
 			logger.Error("failed to decode received block", "err", err)
 			return
 		}
-		logger.Debug("want block", "height", blockHeight.Height, "peer", msg.GetFrom())
+		logger.Debug("go block get request", "height", blockHeight.Height, "peer", msg.GetFrom())
 
 		if n.blockChain.LatestBlock().Header.Height.Cmp(blockHeight.Height) >= 0 {
 			block := n.blockChain.BlockByHeight(blockHeight.Height.Uint64())
@@ -71,7 +69,6 @@ func (n *Network) registerBlockGetSubscribers() {
 			if msg.ReceivedFrom == n.localHost.ID() {
 				continue
 			}
-			logger.Debug("got msg", "peer", msg.GetFrom())
 
 			go pipeline(msg)
 		}

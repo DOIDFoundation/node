@@ -1,9 +1,6 @@
 package network
 
 import (
-	"math/big"
-
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
@@ -36,18 +33,10 @@ func (n *Network) registerBlockInfoSubscribers() {
 		}
 		logger.Debug("got message block info", "height", blockInfo.Height, "peer", msg.GetFrom())
 
-		store := n.localHost.Peerstore()
-		store.Put(msg.GetFrom(), "height", blockInfo.Height)
-		if n.networkHeight.Cmp(blockInfo.Height) < 0 {
-			n.networkHeight.Set(blockInfo.Height)
-		}
+		n.syncIfBehind(blockInfo.Height)
 
-		switch n.blockChain.LatestBlock().Header.Height.Cmp(blockInfo.Height) {
-		case -1:
-			logger.Info("we are behind, start sync", "ours", n.blockChain.LatestBlock().Header.Height)
-			n.publishBlockGet(big.NewInt(0).Add(n.blockChain.LatestBlock().Header.Height, common.Big1))
-		case 0:
-		case 1:
+		if n.blockChain.LatestBlock().Header.Height.Cmp(blockInfo.Height) > 0 {
+			// we are ahead, notify peer of behind
 			peerNotifier <- msg.GetFrom().String()
 		}
 	}
@@ -70,7 +59,7 @@ func (n *Network) registerBlockInfoSubscribers() {
 			if msg.ReceivedFrom == n.localHost.ID() {
 				continue
 			}
-			logger.Debug("got msg", "peer", msg.GetFrom())
+
 			go pipeline(msg)
 		}
 	}
