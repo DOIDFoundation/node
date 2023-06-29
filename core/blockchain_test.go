@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func newBlockChain(t *testing.T) *core.BlockChain {
@@ -20,7 +21,12 @@ func newBlockChain(t *testing.T) *core.BlockChain {
 	return chain
 }
 
-func advanceBlock(t *testing.T, chain *core.BlockChain, txs types.Txs) {
+func advanceBlock(t *testing.T, chain *core.BlockChain, txs types.Txs, time uint64) {
+	newBlock := buildBlock(t, chain, txs, time)
+	assert.NoError(t, chain.ApplyBlock(newBlock))
+}
+
+func buildBlock(t *testing.T, chain *core.BlockChain, txs types.Txs, time uint64) *types.Block {
 	result, err := chain.Simulate(txs)
 	assert.NoError(t, err)
 	block := chain.LatestBlock()
@@ -29,17 +35,19 @@ func advanceBlock(t *testing.T, chain *core.BlockChain, txs types.Txs) {
 	header.Height.Add(header.Height, common.Big1)
 	header.Root = result.StateRoot
 	header.ReceiptHash = result.ReceiptRoot
+	header.Time = time
 	newBlock := types.NewBlockWithHeader(header)
 	newBlock.Data = types.Data{Txs: txs}
-	assert.NoError(t, chain.ApplyBlock(newBlock))
+	return newBlock
 }
 
 func TestNewBlockchain(t *testing.T) {
 	chain := newBlockChain(t)
-	assert.Zero(t, chain.LatestBlock().Header.Height.Cmp(common.Big0))
+	assert.Equal(t, common.Big1, chain.LatestBlock().Header.Height)
 	assert.NotZero(t, chain.LatestBlock().Header.Root)
 	assert.Zero(t, chain.LatestBlock().Header.ParentHash)
 	assert.NotZero(t, chain.LatestBlock().Header.TxHash)
+	chain.Close()
 }
 
 func TestSimulate(t *testing.T) {
@@ -65,7 +73,7 @@ func TestApplyBlock(t *testing.T) {
 	newBlock := types.NewBlockWithHeader(header)
 	newBlock.Data = types.Data{Txs: txs}
 	assert.NoError(t, chain.ApplyBlock(newBlock))
-	assert.Zero(t, chain.LatestBlock().Header.Height.Cmp(common.Big1))
+	assert.Equal(t, common.Big2, chain.LatestBlock().Header.Height)
 	assert.Equal(t, block.Hash(), newBlock.Header.ParentHash)
 	assert.Equal(t, newBlock.Hash(), chain.LatestBlock().Hash())
 	assert.NotEqual(t, block.Hash(), chain.LatestBlock().Hash())
@@ -73,8 +81,33 @@ func TestApplyBlock(t *testing.T) {
 
 func TestBlockByHeight(t *testing.T) {
 	chain := newBlockChain(t)
-	assert.NotNil(t, chain.BlockByHeight(0))
-	assert.Nil(t, chain.BlockByHeight(1))
-	advanceBlock(t, chain, types.Txs{})
+	assert.Nil(t, chain.BlockByHeight(0))
 	assert.NotNil(t, chain.BlockByHeight(1))
+	assert.Nil(t, chain.BlockByHeight(2))
+	advanceBlock(t, chain, types.Txs{}, 1)
+	assert.NotNil(t, chain.BlockByHeight(2))
+}
+
+func TestInsertBlocks(t *testing.T) {
+	chain := newBlockChain(t)
+	blocks := []*types.Block{}
+	for i := 0; i < 4; i++ {
+		block := buildBlock(t, chain, types.Txs{}, 1)
+		require.NoError(t, chain.ApplyBlock(block))
+		blocks = append(blocks, block)
+	}
+	chain.Close()
+
+	// insert into empty chain
+	chain = newBlockChain(t)
+	assert.NoError(t, chain.InsertBlocks(blocks))
+	chain.Close()
+
+	// insert into non-empty chain
+	chain = newBlockChain(t)
+	for i := 0; i < 5; i++ {
+		advanceBlock(t, chain, types.Txs{}, 2)
+	}
+	assert.Equal(t, core.ErrUnknownAncestor, chain.InsertBlocks(blocks[1:]))
+	assert.NoError(t, chain.InsertBlocks(blocks))
 }

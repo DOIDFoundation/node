@@ -254,7 +254,7 @@ func (c *Consensus) commitWork() {
 	c.target = new(big.Int).Div(two256, header.Difficulty)
 
 	header.ParentHash = parent.Hash()
-	header.Time = time.Now()
+	header.Time = uint64(time.Now().Unix())
 	header.Height.Add(header.Height, big.NewInt(1))
 	header.Difficulty.Set(calcDifficulty(header.Time, parent.Header))
 	header.Root = result.StateRoot
@@ -286,7 +286,7 @@ var (
 	DurationLimit          = big.NewInt(13)     // The decision boundary on the blocktime duration used to determine whether difficulty should go up or not.
 )
 
-func calcDifficulty(time time.Time, parent *types.Header) *big.Int {
+func calcDifficulty(time uint64, parent *types.Header) *big.Int {
 	// https://github.com/ethereum/EIPs/blob/master/EIPS/eip-2.md
 	// algorithm:
 	// diff = (parent_diff +
@@ -294,7 +294,7 @@ func calcDifficulty(time time.Time, parent *types.Header) *big.Int {
 	//        ) + 2^(periodCount - 2)
 
 	// 1 - (block_timestamp - parent_timestamp) // 10
-	x := big.NewInt(time.Unix() - parent.Time.Unix())
+	x := new(big.Int).SetUint64(time - parent.Time)
 	x.Div(x, big10)
 	x.Sub(big1, x)
 
