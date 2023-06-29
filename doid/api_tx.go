@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/DOIDFoundation/node/core"
+	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/DOIDFoundation/node/types/tx"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -45,7 +45,7 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 	if err != nil {
 		return nil, err
 	}
-	core.EventInstance().FireEvent(types.EventNewTx, &t)
+	events.NewTx.Send(t)
 	return t.Hash(), nil
 }
 

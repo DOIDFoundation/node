@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/store"
 	"github.com/DOIDFoundation/node/transactor"
 	"github.com/DOIDFoundation/node/types"
-	"github.com/cometbft/cometbft/libs/events"
 	"github.com/cometbft/cometbft/libs/log"
 	cosmosdb "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/iavl"
@@ -52,20 +52,19 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 		stateDb:    db,
 	}
 
-	var block *types.Block = nil
-	headBlockHash := blockStore.ReadHeadBlockHash()
-	if headBlockHash != nil {
-		block = blockStore.ReadBlock(headBlockHash)
-		bc.Logger.Info("found head block", "hash", headBlockHash, "header", block.Header)
-	}
+	block := blockStore.ReadHeadBlock()
 	if block == nil {
+		bc.Logger.Info("no head block found, generate from genesis")
 		block = types.NewBlockWithHeader(&types.Header{
 			Difficulty: big.NewInt(0x1000000),
 			Height:     big.NewInt(0),
 			Root:       hexutil.MustDecode("0xE3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"),
 			TxHash:     hexutil.MustDecode("0xE3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"),
 		})
-		bc.SetHead(block)
+		bc.blockStore.WriteTd(block.Hash(), block.Header.Height.Uint64(), block.Header.Difficulty)
+		bc.writeHeadBlock(block)
+	} else {
+		bc.Logger.Info("load head block", "height", block.Header.Height, "header", block.Header)
 	}
 	bc.latestBlock = block
 
@@ -75,7 +74,7 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 }
 
 func (bc *BlockChain) Close() {
-	EventInstance().RemoveListener("blockchain")
+	events.NewNetworkBlock.Unsubscribe("blockchain")
 	if err := bc.stateDb.Close(); err != nil {
 		bc.Logger.Error("error closing state database", "err", err)
 	}
@@ -85,26 +84,28 @@ func (bc *BlockChain) Close() {
 }
 
 func (bc *BlockChain) registerEventHandlers() {
-	EventInstance().AddListenerForEvent("blockchain", types.EventNewNetworkBlock, func(data events.EventData) {
-		block := data.(*types.Block)
-		if block == nil {
-			bc.Logger.Error("bad block from network event", "block", block)
-			return
-		}
+	events.NewNetworkBlock.Subscribe("blockchain", func(block *types.Block) {
 		if err := bc.ApplyBlock(block); err != nil {
 			bc.Logger.Error("bad block from network", "err", err, "block", block.Hash(), "header", block.Header)
 			// @todo check if fork happened
-			EventInstance().FireEvent(types.EventForkDetected, nil)
+			events.ForkDetected.Send(struct{}{})
 		}
 	})
 }
 
-func (bc *BlockChain) SetHead(block *types.Block) {
-	bc.Logger.Info("head block", "block", block.Hash(), "header", block.Header)
+func (bc *BlockChain) writeHeadBlock(block *types.Block) {
 	bc.blockStore.WriteBlock(block)
 	bc.blockStore.WriteHeadBlockHash(block.Hash())
-	EventInstance().FireEvent(types.EventNewChainHead, block)
+}
+
+func (bc *BlockChain) SetHead(block *types.Block) {
+	bc.Logger.Info("head block", "block", block.Hash(), "header", block.Header)
+	td := bc.blockStore.ReadTd(bc.CurrentBlock().Hash(), bc.CurrentBlock().Header.Height.Uint64())
+	td.Add(td, block.Header.Difficulty)
+	bc.blockStore.WriteTd(block.Hash(), block.Header.Height.Uint64(), td)
+	bc.writeHeadBlock(block)
 	bc.latestBlock = block
+	events.NewChainHead.Send(block)
 }
 
 func (bc *BlockChain) BlockByHeight(height uint64) *types.Block {
@@ -226,8 +227,4 @@ func (bc *BlockChain) ApplyBlock(block *types.Block) error {
 	bc.SetHead(block)
 
 	return nil
-}
-
-func (bc *BlockChain) SubscribeChainHeadEvent(ch chan<- types.ChainHeadEvent) event.Subscription {
-	return bc.chainHeadFeed.Subscribe(ch)
 }

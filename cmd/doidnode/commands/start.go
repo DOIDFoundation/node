@@ -13,10 +13,11 @@ import (
 // addFlags exposes configuration options for starting a node.
 func addFlags(cmd *cobra.Command) {
 	cmd.Flags().String(flags.DB_Engine, "goleveldb", "Backing database implementation to use ('memdb' or 'goleveldb')")
+	cmd.Flags().BoolP(flags.Mine_Enabled, "m", false, "Enable mining")
 	cmd.Flags().Uint(flags.Mine_Threads, 0, "Number of threads to start mining, 0 indicates number of logical CPUs")
-	cmd.Flags().String(flags.RPC_Addr, "127.0.0.1:26657", "rpc listen address")
-	cmd.Flags().String(flags.P2P_Addr, "/ip4/127.0.0.1/tcp/26667", "p2p listen address")
-	cmd.Flags().StringP("rendezvous", "r", "", "rendezvous")
+	cmd.Flags().String(flags.RPC_Addr, "127.0.0.1:26657", "RPC listen address")
+	cmd.Flags().String(flags.P2P_Addr, "/ip4/127.0.0.1/tcp/26667", "Libp2p listen address")
+	cmd.Flags().StringP(flags.P2P_Rendezvous, "r", "doidnode", "Libp2p rendezvous string used for peer discovery")
 	viper.BindPFlags(cmd.Flags())
 }
 

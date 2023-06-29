@@ -2,18 +2,19 @@ package network
 
 import (
 	"context"
-	"github.com/libp2p/go-libp2p/core/protocol"
+	"math/big"
 	"sync"
-	"time"
+	"sync/atomic"
 
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 
 	"github.com/DOIDFoundation/node/core"
+	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/types"
-	"github.com/cometbft/cometbft/libs/events"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
@@ -29,7 +30,8 @@ import (
 var peerPool = make(map[string]peer.AddrInfo)
 var ctx = context.Background()
 var maxHeight uint64
-var msgChannel = make(chan string)
+var peerNotifier = make(chan string)
+var blockGet = make(chan *big.Int)
 
 type Network struct {
 	service.BaseService
@@ -42,7 +44,8 @@ type Network struct {
 	topicBlockInfo   *pubsub.Topic
 	topicBlockGet    *pubsub.Topic
 	blockChain       *core.BlockChain
-	rpcService       *RpcService
+	networkHeight    *big.Int
+	sycing           atomic.Bool
 }
 
 // Option sets a parameter for the network.
@@ -53,10 +56,10 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	network := &Network{
 		config:     &DefaultConfig,
 		blockChain: chain,
+
+		networkHeight: big.NewInt(0),
 	}
 	network.BaseService = *service.NewBaseService(logger.With("module", "network"), "Network", network)
-
-	network.blockChain = chain
 
 	network.registerEventHandlers()
 	return network
@@ -66,8 +69,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 func (n *Network) OnStart() error {
 	var opts []libp2p.Option
 	n.config.ListenAddresses = viper.GetString(flags.P2P_Addr)
-	n.config.RendezvousString = viper.GetString("rendezvous")
-
+	n.config.RendezvousString = viper.GetString(flags.P2P_Rendezvous)
 	m1, err := multiaddr.NewMultiaddr(n.config.ListenAddresses)
 	if err != nil {
 		return err
@@ -115,9 +117,9 @@ func (n *Network) OnStart() error {
 	n.pubsub = ps
 	n.localHost = localHost
 
-	//n.registerBlockInfoSubscribers()
-	//n.registerBlockGetSubscribers()
-	//n.registerBlockSubscribers()
+	n.registerBlockInfoSubscribers()
+	n.registerBlockGetSubscribers()
+	n.registerBlockSubscribers()
 
 	go n.Bootstrap(localHost, kademliaDHT)
 
@@ -126,22 +128,61 @@ func (n *Network) OnStart() error {
 
 // OnStop stops the Network. It implements service.Service.
 func (n *Network) OnStop() {
-	core.EventInstance().RemoveListener(n.String())
+	events.NewChainHead.Unsubscribe(n.String())
+	events.ForkDetected.Unsubscribe(n.String())
+	events.NewMinedBlock.Unsubscribe(n.String())
+}
+
+func (n *Network) syncIfBehind(height *big.Int) {
+	if n.networkHeight.Cmp(height) < 0 {
+		n.networkHeight.Set(height)
+		if n.blockChain.LatestBlock().Header.Height.Cmp(height) < 0 {
+			n.Logger.Info("we are behind, start sync", "ours", n.blockChain.LatestBlock().Header.Height, "network", height)
+			n.startSync()
+		}
+	}
+}
+
+func (n *Network) startSync() {
+	if !n.sycing.CompareAndSwap(false, true) {
+		// already started
+		return
+	}
+	n.Logger.Info("start syncing")
+	events.SyncStarted.Send(struct{}{})
+	events.NewChainHead.Subscribe("network_sync", func(block *types.Block) {
+		height := block.Header.Height
+		if height.Cmp(n.networkHeight) < 0 {
+			n.Logger.Debug("sync in progress", "ours", height, "network", n.networkHeight)
+			n.publishBlockGet(big.NewInt(0).Add(height, common.Big1))
+		} else {
+			n.Logger.Info("sync caught up", "ours", height, "network", n.networkHeight)
+			n.stopSync()
+		}
+	})
+	n.publishBlockGet(big.NewInt(0).Add(n.blockChain.LatestBlock().Header.Height, common.Big1))
+}
+
+func (n *Network) stopSync() {
+	if !n.sycing.CompareAndSwap(true, false) {
+		// already stopped
+		return
+	}
+	events.NewChainHead.Unsubscribe("network_sync")
+	events.SyncFinished.Send(struct{}{})
 }
 
 func (n *Network) registerEventHandlers() {
-	core.EventInstance().AddListenerForEvent(n.String(), types.EventForkDetected, func(data events.EventData) {
+	events.ForkDetected.Subscribe(n.String(), func(data struct{}) {
 		// @todo handle fork event
-		core.EventInstance().FireEvent(types.EventSyncStarted, nil)
-		time.Sleep(time.Second)
-		core.EventInstance().FireEvent(types.EventSyncFinished, nil)
+		n.startSync()
 	})
-	core.EventInstance().AddListenerForEvent(n.String(), types.EventNewMinedBlock, func(data events.EventData) {
+	events.NewMinedBlock.Subscribe(n.String(), func(data *types.Block) {
 		if n.topicBlock == nil {
 			n.Logger.Info("not broadcasting, new block topic not joined")
 			return
 		}
-		b, err := rlp.EncodeToBytes(data.(*types.Block))
+		b, err := rlp.EncodeToBytes(data)
 		if err != nil {
 			n.Logger.Error("failed to encode block for broadcasting", "err", err)
 			return
@@ -172,21 +213,9 @@ func (n *Network) Bootstrap(newNode host.Host, kademliaDHT *dht.IpfsDHT) {
 		}()
 	}
 	wg.Wait()
-	core.EventInstance().FireEvent(types.EventSyncFinished, nil)
 
-	//go n.publishBlockHeight()
-
-	service := NewService(newNode, protocol.ID(ProtocolID), n.blockChain, n.Logger)
-	err := service.SetupRPC()
-	if err != nil {
-		n.Logger.Error("new RPC service", "err", err)
-	}
-
-	n.rpcService = service
-
-	go setupDiscover(ctx, newNode, kademliaDHT, n.config.RendezvousString)
-	go n.notifyPeerFoundEvent()
-	go service.StartBlockSync()
+	go n.publishBlockHeight()
+	go n.publishBlockGetLoop()
 
 	// We use a rendezvous point "meet me here" to announce our location.
 	// This is like telling your friends to meet you at the Eiffel Tower.
@@ -244,10 +273,31 @@ type discoveryNotifee struct {
 	Logger log.Logger
 }
 
-func (n *Network) notifyPeerFoundEvent() {
+func (n *Network) publishBlockGetLoop() {
 	for {
-		<-msgChannel
-		n.rpcService.notifyNewStatusEvent()
+		height := <-blockGet
+		n.Logger.Info("need block", "height", height)
+		blockInfo := BlockInfo{Height: height}
+		b, err := rlp.EncodeToBytes(blockInfo)
+		if err != nil {
+			n.Logger.Error("failed to encode block for broadcasting", "err", err)
+			return
+		}
+		n.topicBlockGet.Publish(ctx, b)
+	}
+}
+
+func (n *Network) publishBlockHeight() {
+	for {
+		peer := <-peerNotifier
+		n.Logger.Info("publish block height", "peer", peer)
+		blockInfo := BlockInfo{Height: n.blockChain.LatestBlock().Header.Height}
+		b, err := rlp.EncodeToBytes(blockInfo)
+		if err != nil {
+			n.Logger.Error("failed to encode block for broadcasting", "err", err)
+			return
+		}
+		n.topicBlockInfo.Publish(ctx, b)
 	}
 }
 
@@ -258,14 +308,14 @@ func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 	if pi.ID.String() == n.h.ID().String() {
 		return
 	}
-	n.Logger.Info("discovered new peer ", pi.ID.Pretty())
+	n.Logger.Debug("discovered new peer", "peer", pi)
 	err := n.h.Connect(context.Background(), pi)
 	if err != nil {
-		n.Logger.Info("error connecting to peer ", pi.ID.Pretty(), ": ", err)
+		n.Logger.Debug("error connecting to peer", "peer", pi, "err", err)
 	}
-	n.Logger.Info("connected to peer ", pi.ID.Pretty())
+	n.Logger.Debug("connected to peer", "peer", pi)
 
-	msgChannel <- pi.ID.String()
+	peerNotifier <- pi.ID.String()
 }
 
 const DiscoveryServiceTag = "doid-network"
