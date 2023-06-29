@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"sync"
 	"time"
 
@@ -41,6 +42,7 @@ type Network struct {
 	topicBlockInfo   *pubsub.Topic
 	topicBlockGet    *pubsub.Topic
 	blockChain       *core.BlockChain
+	rpcService       *RpcService
 }
 
 // Option sets a parameter for the network.
@@ -49,8 +51,8 @@ type Option func(*Network)
 // NewNetwork returns a new, ready to go, CometBFT Node.
 func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	network := &Network{
-		config: &DefaultConfig,
-		chain:  chain,
+		config:     &DefaultConfig,
+		blockChain: chain,
 	}
 	network.BaseService = *service.NewBaseService(logger.With("module", "network"), "Network", network)
 
@@ -65,6 +67,7 @@ func (n *Network) OnStart() error {
 	var opts []libp2p.Option
 	n.config.ListenAddresses = viper.GetString(flags.P2P_Addr)
 	n.config.RendezvousString = viper.GetString("rendezvous")
+
 	m1, err := multiaddr.NewMultiaddr(n.config.ListenAddresses)
 	if err != nil {
 		return err
@@ -112,9 +115,9 @@ func (n *Network) OnStart() error {
 	n.pubsub = ps
 	n.localHost = localHost
 
-	n.registerBlockInfoSubscribers()
-	n.registerBlockGetSubscribers()
-	n.registerBlockSubscribers()
+	//n.registerBlockInfoSubscribers()
+	//n.registerBlockGetSubscribers()
+	//n.registerBlockSubscribers()
 
 	go n.Bootstrap(localHost, kademliaDHT)
 
@@ -171,7 +174,19 @@ func (n *Network) Bootstrap(newNode host.Host, kademliaDHT *dht.IpfsDHT) {
 	wg.Wait()
 	core.EventInstance().FireEvent(types.EventSyncFinished, nil)
 
-	go n.publishBlockHeight()
+	//go n.publishBlockHeight()
+
+	service := NewService(newNode, protocol.ID(ProtocolID), n.blockChain, n.Logger)
+	err := service.SetupRPC()
+	if err != nil {
+		n.Logger.Error("new RPC service", "err", err)
+	}
+
+	n.rpcService = service
+
+	go setupDiscover(ctx, newNode, kademliaDHT, n.config.RendezvousString)
+	go n.notifyPeerFoundEvent()
+	go service.StartBlockSync()
 
 	// We use a rendezvous point "meet me here" to announce our location.
 	// This is like telling your friends to meet you at the Eiffel Tower.
@@ -229,17 +244,10 @@ type discoveryNotifee struct {
 	Logger log.Logger
 }
 
-func (n *Network) publishBlockHeight() {
+func (n *Network) notifyPeerFoundEvent() {
 	for {
-		msg := <-msgChannel
-		n.Logger.Info("receive msg", "content", msg)
-		blockInfo := BlockInfo{Height: n.blockChain.LatestBlock().Header.Height}
-		b, err := rlp.EncodeToBytes(blockInfo)
-		if err != nil {
-			n.Logger.Error("failed to encode block for broadcasting", "err", err)
-			return
-		}
-		n.topicBlockInfo.Publish(ctx, b)
+		<-msgChannel
+		n.rpcService.notifyNewStatusEvent()
 	}
 }
 

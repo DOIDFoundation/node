@@ -60,12 +60,10 @@ func (n *Network) registerBlockInfoSubscribers() {
 				return
 			}
 
-			n.Logger.Info("topic block_info msg from ", msg.ReceivedFrom)
 			if msg.ReceivedFrom == n.localHost.ID() {
 				continue
 			}
 
-			n.Logger.Info("step 2 topic block_info msg from ", msg.ReceivedFrom)
 			go pipeline(msg)
 		}
 	}
