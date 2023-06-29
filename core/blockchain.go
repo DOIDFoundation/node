@@ -18,7 +18,6 @@ import (
 	"github.com/cosmos/iavl"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/event"
 	"github.com/spf13/viper"
 )
 
@@ -27,11 +26,9 @@ type BlockChain struct {
 	blockStore  *store.BlockStore
 	latestBlock *types.Block
 
-	chainHeadFeed event.Feed
-
-	stateDb cosmosdb.DB
-	state   *iavl.MutableTree
-	mu      sync.Mutex
+	stateDb   cosmosdb.DB
+	state     *iavl.MutableTree
+	stateOnce sync.Once
 }
 
 func NewBlockChain(logger log.Logger) (*BlockChain, error) {
@@ -100,7 +97,7 @@ func (bc *BlockChain) writeHeadBlock(block *types.Block) {
 
 func (bc *BlockChain) SetHead(block *types.Block) {
 	bc.Logger.Info("head block", "block", block.Hash(), "header", block.Header)
-	td := bc.blockStore.ReadTd(bc.CurrentBlock().Hash(), bc.CurrentBlock().Header.Height.Uint64())
+	td := bc.blockStore.ReadTd(bc.LatestBlock().Hash(), bc.LatestBlock().Header.Height.Uint64())
 	td.Add(td, block.Header.Difficulty)
 	bc.blockStore.WriteTd(block.Hash(), block.Header.Height.Uint64(), td)
 	bc.writeHeadBlock(block)
@@ -112,13 +109,6 @@ func (bc *BlockChain) BlockByHeight(height uint64) *types.Block {
 	return bc.blockStore.ReadBlockByHeight(height)
 }
 
-// CurrentBlock retrieves the current head block of the canonical chain. The
-// block is retrieved from the blockchain's internal cache.
-func (bc *BlockChain) CurrentBlock() *types.Block {
-	// return bc.currentBlock.Load().(*types.Block)
-	return bc.latestBlock
-}
-
 // LatestBlock retrieves the latest head block of the canonical chain. The
 // block is retrieved from the blockchain's internal cache.
 func (bc *BlockChain) LatestBlock() *types.Block {
@@ -126,10 +116,7 @@ func (bc *BlockChain) LatestBlock() *types.Block {
 }
 
 func (bc *BlockChain) LatestState() (*iavl.ImmutableTree, error) {
-	state, err := bc.mutableState()
-	if err != nil {
-		return nil, err
-	}
+	state := bc.mutableState()
 	return state.GetImmutable(bc.LatestBlock().Header.Height.Int64())
 }
 
@@ -161,27 +148,21 @@ func (bc *BlockChain) newOpenState() (*iavl.MutableTree, error) {
 	return tree, nil
 }
 
-func (bc *BlockChain) mutableState() (*iavl.MutableTree, error) {
-	if bc.state != nil {
-		return bc.state, nil
-	}
+func (bc *BlockChain) mutableState() *iavl.MutableTree {
+	bc.stateOnce.Do(func() {
+		tree, err := bc.newOpenState()
+		if err != nil {
+			bc.Logger.Error("failed to create state", "err", err)
+			panic(err)
+		}
+		bc.state = tree
+	})
 
-	bc.mu.Lock()
-	defer bc.mu.Unlock()
-	if bc.state != nil {
-		return bc.state, nil
-	}
-
-	tree, err := bc.newOpenState()
-	bc.state = tree
-	return tree, err
+	return bc.state
 }
 
 func (bc *BlockChain) Simulate(txs types.Txs) (*transactor.ExecutionResult, error) {
-	state, err := bc.mutableState()
-	if err != nil {
-		return nil, err
-	}
+	state := bc.mutableState()
 	defer state.Rollback()
 	return transactor.ApplyTxs(state, txs)
 }
@@ -193,10 +174,7 @@ func (bc *BlockChain) ApplyBlock(block *types.Block) error {
 	if !bytes.Equal(block.Header.ParentHash, bc.LatestBlock().Hash()) {
 		return fmt.Errorf("block not contiguous, latest hash %v, new block's parent %v", bc.LatestBlock().Hash(), block.Header.ParentHash)
 	}
-	state, err := bc.mutableState()
-	if err != nil {
-		return err
-	}
+	state := bc.mutableState()
 
 	result, err := transactor.ApplyTxs(state, block.Data.Txs)
 	if err != nil {
