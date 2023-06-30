@@ -7,6 +7,7 @@ import (
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/types"
+	"github.com/DOIDFoundation/node/types/tx"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/spf13/viper"
@@ -29,13 +30,14 @@ func advanceBlock(t *testing.T, chain *core.BlockChain, txs types.Txs, time uint
 func buildBlock(t *testing.T, chain *core.BlockChain, txs types.Txs, time uint64) *types.Block {
 	result, err := chain.Simulate(txs)
 	assert.NoError(t, err)
-	block := chain.LatestBlock()
-	header := types.CopyHeader(block.Header)
-	header.ParentHash = header.Hash()
+	parent := chain.LatestBlock()
+	header := types.CopyHeader(parent.Header)
+	header.ParentHash = parent.Hash()
 	header.Height.Add(header.Height, common.Big1)
 	header.Root = result.StateRoot
 	header.ReceiptHash = result.ReceiptRoot
 	header.Time = time
+	header.Difficulty = types.CalcDifficulty(time, parent.Header)
 	newBlock := types.NewBlockWithHeader(header)
 	newBlock.Data = types.Data{Txs: txs}
 	return newBlock
@@ -62,16 +64,8 @@ func TestSimulate(t *testing.T) {
 func TestApplyBlock(t *testing.T) {
 	var txs types.Txs
 	chain := newBlockChain(t)
-	result, err := chain.Simulate(txs)
-	assert.NoError(t, err)
 	block := chain.LatestBlock()
-	header := types.CopyHeader(block.Header)
-	header.ParentHash = header.Hash()
-	header.Height.Add(header.Height, common.Big1)
-	header.Root = result.StateRoot
-	header.ReceiptHash = result.ReceiptRoot
-	newBlock := types.NewBlockWithHeader(header)
-	newBlock.Data = types.Data{Txs: txs}
+	newBlock := buildBlock(t, chain, txs, 1)
 	assert.NoError(t, chain.ApplyBlock(newBlock))
 	assert.Equal(t, common.Big2, chain.LatestBlock().Header.Height)
 	assert.Equal(t, block.Hash(), newBlock.Header.ParentHash)
@@ -92,7 +86,7 @@ func TestInsertBlocks(t *testing.T) {
 	chain := newBlockChain(t)
 	blocks := []*types.Block{}
 	for i := 0; i < 4; i++ {
-		block := buildBlock(t, chain, types.Txs{}, 1)
+		block := buildBlock(t, chain, types.Txs{}, uint64(i+1))
 		require.NoError(t, chain.ApplyBlock(block))
 		blocks = append(blocks, block)
 	}
@@ -106,8 +100,61 @@ func TestInsertBlocks(t *testing.T) {
 	// insert into non-empty chain
 	chain = newBlockChain(t)
 	for i := 0; i < 5; i++ {
-		advanceBlock(t, chain, types.Txs{}, 2)
+		advanceBlock(t, chain, types.Txs{}, uint64(i+2))
 	}
 	assert.Equal(t, core.ErrUnknownAncestor, chain.InsertBlocks(blocks[1:]))
 	assert.NoError(t, chain.InsertBlocks(blocks))
+}
+
+func TestApplyHeaderChain(t *testing.T) {
+	chain := newBlockChain(t)
+	blocks := []*types.Block{}
+	for i := 0; i < 10; i++ {
+		block := buildBlock(t, chain, types.Txs{}, uint64(i+2))
+		require.NoError(t, chain.ApplyBlock(block))
+		blocks = append(blocks, block)
+	}
+	chain.Close()
+
+	// insert into empty chain
+	chain = newBlockChain(t)
+	hc := chain.NewHeaderChain()
+	assert.NoError(t, hc.AppendBlocks(blocks))
+	assert.NoError(t, chain.ApplyHeaderChain(hc))
+
+	// insert into non-empty chain
+	chain = newBlockChain(t)
+	hc = chain.NewHeaderChain()
+	advanceBlock(t, chain, types.Txs{}, uint64(2))
+	for i := 1; i < 9; i++ {
+		advanceBlock(t, chain, types.Txs{}, uint64(i+3))
+	}
+	assert.NoError(t, hc.AppendBlocks(blocks[1:]))
+	assert.NoError(t, chain.ApplyHeaderChain(hc))
+
+	// insert into longer chain
+	chain = newBlockChain(t)
+	hc = chain.NewHeaderChain()
+	advanceBlock(t, chain, types.Txs{}, uint64(2))
+	for i := 1; i < 10; i++ {
+		advanceBlock(t, chain, types.Txs{}, uint64(i+3))
+	}
+	assert.NoError(t, hc.AppendBlocks(blocks[1:]))
+	assert.EqualError(t, chain.ApplyHeaderChain(hc), "total difficulty lower than current")
+
+	// insert a bad header chain
+	chain = newBlockChain(t)
+	hc = chain.NewHeaderChain()
+	for i := 1; i < 5; i++ {
+		advanceBlock(t, chain, types.Txs{}, uint64(i+3))
+	}
+	td := chain.GetTd()
+	register := &tx.Register{DOID: "test", Owner: []byte("test")}
+	bz, _ := tx.NewTx(register)
+	blocks[3].Data.Txs = types.Txs{bz}
+	blocks[4].Header.ParentHash = blocks[3].Hash()
+	assert.NoError(t, hc.AppendBlocks(blocks))
+	assert.NotZero(t, hc.GetTd())
+	assert.EqualError(t, chain.ApplyHeaderChain(hc), "total difficulty lower than current")
+	assert.Zero(t, chain.GetTd().Cmp(td))
 }

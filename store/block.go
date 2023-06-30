@@ -156,7 +156,7 @@ func (bs *BlockStore) DeleteHeaderHeight(hash types.Hash) {
 }
 
 // ReadTd retrieves a block's total difficulty corresponding to the hash.
-func (bs *BlockStore) ReadTd(hash types.Hash, height uint64) *big.Int {
+func (bs *BlockStore) ReadTd(height uint64, hash types.Hash) *big.Int {
 	data, err := bs.db.Get(headerTDKey(height, hash))
 	if err != nil {
 		bs.Logger.Error("Failed to read block total difficulty", "err", err)
@@ -174,7 +174,7 @@ func (bs *BlockStore) ReadTd(hash types.Hash, height uint64) *big.Int {
 }
 
 // WriteTd stores the total difficulty of a block into the database.
-func (bs *BlockStore) WriteTd(hash types.Hash, height uint64, td *big.Int) {
+func (bs *BlockStore) WriteTd(height uint64, hash types.Hash, td *big.Int) {
 	data, err := rlp.EncodeToBytes(td)
 	if err != nil {
 		bs.Logger.Error("Failed to RLP encode block total difficulty", "err", err)
@@ -187,7 +187,7 @@ func (bs *BlockStore) WriteTd(hash types.Hash, height uint64, td *big.Int) {
 }
 
 // DeleteTd removes all block total difficulty data associated with a hash.
-func (bs *BlockStore) DeleteTd(hash types.Hash, height uint64) {
+func (bs *BlockStore) DeleteTd(height uint64, hash types.Hash) {
 	if err := bs.db.Delete(headerTDKey(height, hash)); err != nil {
 		bs.Logger.Error("Failed to delete block total difficulty", "err", err)
 		panic(err)

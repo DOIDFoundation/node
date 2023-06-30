@@ -13,6 +13,7 @@ import (
 func TestHeader(t *testing.T) {
 	h := &types.Header{
 		ParentHash:  []byte{0},
+		UncleHash:   []byte{0},
 		Miner:       []byte{0},
 		Root:        []byte{0},
 		TxHash:      []byte{0},
@@ -29,6 +30,11 @@ func TestHeader(t *testing.T) {
 
 	hCopy = types.CopyHeader(h)
 	hCopy.ParentHash[0] = 1
+	hCopyHash = hCopy.Hash()
+	assert.NotEqual(t, hash, hCopyHash)
+
+	hCopy = types.CopyHeader(h)
+	hCopy.UncleHash[0] = 1
 	hCopyHash = hCopy.Hash()
 	assert.NotEqual(t, hash, hCopyHash)
 
@@ -82,6 +88,10 @@ func TestBlock(t *testing.T) {
 	h := &types.Header{}
 	b := types.NewBlockWithHeader(h)
 	assert.Nil(t, b.Header.TxHash)
+	assert.Nil(t, b.Header.ReceiptHash)
+	assert.Nil(t, b.Header.UncleHash)
 	b.Hash()
 	assert.Equal(t, hexutil.MustDecode("0xE3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"), b.Header.TxHash.Bytes())
+	assert.Equal(t, hexutil.MustDecode("0xE3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"), b.Header.ReceiptHash.Bytes())
+	assert.Equal(t, hexutil.MustDecode("0xE3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"), b.Header.UncleHash.Bytes())
 }
