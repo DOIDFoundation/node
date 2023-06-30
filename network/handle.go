@@ -86,7 +86,7 @@ func (n *Network) handleBlock(content []byte) {
 	}
 	if n.blockChain.LatestBlock().Header.Height.Int64() < block.Header.Height.Int64() {
 		n.Logger.Info("apply block", "Peer", v.AddrFrom, "block height", block.Header.Height)
-		err = n.blockChain.ApplyBlock(block)
+		err = n.blockChain.InsertBlocks([]*types.Block{block})
 		if err != nil {
 			n.Logger.Info("failed to apply block", "Peer", v.AddrFrom, "err", err)
 		}
