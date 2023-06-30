@@ -86,6 +86,7 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 		})
 		bc.latestTD = new(big.Int)
 		bc.writeBlock(block)
+		bc.blockStore.WriteHashByHeight(block.Header.Height.Uint64(), block.Hash())
 		bc.blockStore.WriteHeadBlockHash(block.Hash())
 		bc.latestBlock = block
 		if hash, version, err := bc.state.SaveVersion(); err != nil || version != 1 || !bytes.Equal(hash, block.Header.Root) {
@@ -135,7 +136,7 @@ func (bc *BlockChain) setHead(block *types.Block) {
 }
 
 func (bc *BlockChain) BlockByHeight(height uint64) *types.Block {
-	return bc.blockStore.ReadBlockByHeight(height)
+	return bc.blockStore.ReadBlock(height, bc.blockStore.ReadHashByHeight(height))
 }
 
 // LatestBlock retrieves the latest head block of the canonical chain. The
@@ -232,6 +233,7 @@ func (bc *BlockChain) ApplyBlock(block *types.Block) error {
 	if err := bc.applyBlockAndWrite(block); err != nil {
 		return err
 	}
+	bc.blockStore.WriteHashByHeight(block.Header.Height.Uint64(), block.Hash())
 	bc.setHead(block)
 
 	return nil
