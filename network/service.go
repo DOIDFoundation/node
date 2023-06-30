@@ -8,6 +8,7 @@ import (
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"math/big"
 	"time"
 
 	"github.com/libp2p/go-libp2p-gorpc"
@@ -16,23 +17,28 @@ import (
 )
 
 type RpcService struct {
-	Logger      log.Logger
-	rpcServer   *rpc.Server
-	rpcClient   *rpc.Client
-	host        host.Host
-	protocol    protocol.ID
-	counter     int
-	blockChain  *core.BlockChain
-	newStatusCh chan struct{}
+	Logger        log.Logger
+	rpcServer     *rpc.Server
+	rpcClient     *rpc.Client
+	host          host.Host
+	protocol      protocol.ID
+	counter       int
+	blockChain    *core.BlockChain
+	newStatusCh   chan struct{}
+	networkHeight *big.Int
+	peerPool      map[string]peer.AddrInfo
+	localAddr     string
 }
 
 func NewService(host host.Host, protocol protocol.ID, blockChain *core.BlockChain, Logger log.Logger) *RpcService {
 	return &RpcService{
-		host:        host,
-		protocol:    protocol,
-		Logger:      Logger,
-		blockChain:  blockChain,
-		newStatusCh: make(chan struct{}),
+		host:          host,
+		protocol:      protocol,
+		Logger:        Logger,
+		blockChain:    blockChain,
+		newStatusCh:   make(chan struct{}),
+		networkHeight: big.NewInt(0),
+		peerPool:      make(map[string]peer.AddrInfo),
 	}
 }
 
@@ -50,10 +56,7 @@ func (s *RpcService) SetupRPC() error {
 }
 
 func (s *RpcService) notifyNewStatusEvent() {
-	select {
-	case s.newStatusCh <- struct{}{}:
-	default:
-	}
+	s.newStatusCh <- struct{}{}
 }
 
 func (s *RpcService) StartMessaging(ctx context.Context) {
@@ -97,26 +100,17 @@ func (s *RpcService) StartBlockSync() {
 	for {
 		// Wait for a new event to arrive
 		<-s.newStatusCh
-		peers := s.host.Peerstore().Peers()
-		//var replies = make([]*BlockHeightEnvelope, len(peers))
-		//
-		//errs := s.rpcClient.MultiCall(
-		//	Ctxts(len(peers)),
-		//	peers,
-		//	BlockSyncService,
-		//	BlockSyncServiceFuncGetHeight,
-		//	BlockHeightEnvelope{height: 0},
-		//	CopyBlockHeightEnvelopesToIfaces(replies),
-		//)
+		fmt.Printf("start block sync\n")
 
-		localHeight := s.blockChain.LatestBlock().Header.Height.Uint64()
-		for _, peer := range peers {
-			if s.host.ID() == peer {
+		localHeight := s.blockChain.LatestBlock().Header.Height.Int64()
+		for _, peer := range s.peerPool {
+			fmt.Printf("Peer %s host: %s\n", peer.ID.String(), s.host.ID())
+			if s.host.ID() == peer.ID {
 				continue
 			}
 			var blockHeightEnvelope BlockHeightEnvelope
 			err := s.rpcClient.Call(
-				peer,
+				peer.ID,
 				BlockSyncService,
 				BlockSyncServiceFuncGetHeight,
 				BlockHeightEnvelope{height: localHeight},
@@ -124,19 +118,27 @@ func (s *RpcService) StartBlockSync() {
 			)
 
 			if err != nil {
-				fmt.Printf("Peer %s returned error: %-v\n", peer.Pretty(), err)
+				fmt.Printf("Peer %s returned error: %-v\n", peer.ID.Pretty(), err)
+				continue
 			} else {
-				fmt.Printf("Peer %s height: %d localHeight: %d\n", peer.Pretty(), blockHeightEnvelope.height, s.blockChain.LatestBlock().Header.Height.Uint64())
+				fmt.Printf("Peer %s height: %d localHeight: %d\n", peer.ID.Pretty(), blockHeightEnvelope.height, s.blockChain.LatestBlock().Header.Height.Uint64())
 			}
-			if localHeight < blockHeightEnvelope.height {
-				s.BlockSync(peer)
+			if s.networkHeight.Cmp(big.NewInt(blockHeightEnvelope.height)) < 0 {
+				s.networkHeight.Set(big.NewInt(blockHeightEnvelope.height))
+				if s.blockChain.LatestBlock().Header.Height.Cmp(big.NewInt(blockHeightEnvelope.height)) < 0 {
+					s.Logger.Info("we are behind, start sync", "ours", s.blockChain.LatestBlock().Header.Height, "network", blockHeightEnvelope.height)
+
+					s.BlockSync(peer.ID)
+
+				}
 			}
 		}
 	}
-
 }
+
 func (s *RpcService) BlockSync(peer peer.ID) {
 	fmt.Printf("Peer %s begin receive block\n", peer.Pretty())
+
 	for {
 		var blockEnvelope BlockEnvelope
 		fmt.Printf("Peer %s begin receive block height: %d\n", peer.Pretty(), s.blockChain.LatestBlock().Header.Height.Uint64()+1)
@@ -144,7 +146,7 @@ func (s *RpcService) BlockSync(peer peer.ID) {
 			peer,
 			BlockSyncService,
 			BlockSyncServiceFuncGetBlock,
-			BlockHeightEnvelope{height: s.blockChain.LatestBlock().Header.Height.Uint64() + 1},
+			BlockHeightEnvelope{height: s.blockChain.LatestBlock().Header.Height.Int64() + 1},
 			&blockEnvelope,
 		)
 
@@ -166,6 +168,7 @@ func (s *RpcService) BlockSync(peer peer.ID) {
 			} else {
 				return
 			}
+
 		}
 	}
 }
@@ -176,11 +179,11 @@ func (s *RpcService) ReceiveEcho(envelope Envelope) Envelope {
 
 func (s *RpcService) ReceiveGetBlockHeight(envelope BlockHeightEnvelope) BlockHeightEnvelope {
 	fmt.Printf("send height: %d\n", s.blockChain.LatestBlock().Header.Height.Uint64())
-	return BlockHeightEnvelope{height: s.blockChain.LatestBlock().Header.Height.Uint64()}
+	return BlockHeightEnvelope{height: s.blockChain.LatestBlock().Header.Height.Int64()}
 }
 
 func (s *RpcService) ReceiveGetBlock(envelope BlockHeightEnvelope) BlockEnvelope {
-	block := s.blockChain.BlockByHeight(envelope.height)
+	block := s.blockChain.BlockByHeight(uint64(envelope.height))
 
 	b, err := rlp.EncodeToBytes(block)
 	s.Logger.Info("encode block for broadcasting", "size", len(b), "height", envelope.height)

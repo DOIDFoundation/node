@@ -66,7 +66,7 @@ func (n *Network) registerBlockGetSubscribers() {
 				return
 			}
 
-			if msg.ReceivedFrom == n.localHost.ID() {
+			if msg.ReceivedFrom == n.h.ID() {
 				continue
 			}
 

@@ -33,11 +33,11 @@ func (n *Network) registerBlockInfoSubscribers() {
 		}
 		logger.Debug("got message block info", "height", blockInfo.Height, "peer", msg.GetFrom())
 
-		n.syncIfBehind(blockInfo.Height)
+		//n.syncIfBehind(blockInfo.Height)
 
 		if n.blockChain.LatestBlock().Header.Height.Cmp(blockInfo.Height) > 0 {
 			// we are ahead, notify peer of behind
-			peerNotifier <- msg.GetFrom().String()
+			//peerNotifier <- msg.GetFrom().String()
 		}
 	}
 
@@ -56,7 +56,7 @@ func (n *Network) registerBlockInfoSubscribers() {
 				return
 			}
 
-			if msg.ReceivedFrom == n.localHost.ID() {
+			if msg.ReceivedFrom == n.h.ID() {
 				continue
 			}
 

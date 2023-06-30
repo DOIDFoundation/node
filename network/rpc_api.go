@@ -20,7 +20,7 @@ type Envelope struct {
 }
 
 type BlockHeightEnvelope struct {
-	height uint64
+	height int64
 }
 
 type BlockEnvelope struct {
