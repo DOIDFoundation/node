@@ -2,6 +2,8 @@ package network
 
 import (
 	"context"
+	"fmt"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"math/big"
 	"sync"
 	"sync/atomic"
@@ -14,7 +16,6 @@ import (
 	"github.com/DOIDFoundation/node/types"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
@@ -29,15 +30,14 @@ import (
 // ------------------------------------------------------------------------------
 var peerPool = make(map[string]peer.AddrInfo)
 var ctx = context.Background()
-var maxHeight uint64
-var peerNotifier = make(chan string)
+var peerNotifier = make(chan peer.AddrInfo)
 var blockGet = make(chan *big.Int)
 
 type Network struct {
 	service.BaseService
 	config *Config
 
-	localHost        host.Host
+	h                host.Host
 	routingDiscovery *drouting.RoutingDiscovery
 	pubsub           *pubsub.PubSub
 	topicBlock       *pubsub.Topic
@@ -46,6 +46,7 @@ type Network struct {
 	blockChain       *core.BlockChain
 	networkHeight    *big.Int
 	sycing           atomic.Bool
+	peerPool         map[string]peer.AddrInfo
 }
 
 // Option sets a parameter for the network.
@@ -58,6 +59,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 		blockChain: chain,
 
 		networkHeight: big.NewInt(0),
+		peerPool:      make(map[string]peer.AddrInfo),
 	}
 	network.BaseService = *service.NewBaseService(logger.With("module", "network"), "Network", network)
 
@@ -81,12 +83,15 @@ func (n *Network) OnStart() error {
 		return err
 	}
 
+	localAddr = fmt.Sprintf(n.config.ListenAddresses+"/p2p/%s", localHost.ID().Pretty())
+	n.Logger.Info("Host created. We are:", "localAddr", localAddr)
+
 	n.Logger.Info("Host created. We are:", "id", localHost.ID(), "addrs", localHost.Addrs())
 	//n.Logger.Info(host.Addrs())
 
 	// Set a function as stream handler. This function is called when a peer
 	// initiates a connection and starts a stream with this peer.
-	//localHost.SetStreamHandler(protocol.ID(ProtocolID), n.handleStream)
+	localHost.SetStreamHandler(protocol.ID(ProtocolID), n.handleStream)
 
 	// Start a DHT, for use in peer discovery. We can't just make a new DHT
 	// client because we want each peer to maintain its own local copy of the
@@ -115,11 +120,7 @@ func (n *Network) OnStart() error {
 		return err
 	}
 	n.pubsub = ps
-	n.localHost = localHost
-
-	n.registerBlockInfoSubscribers()
-	n.registerBlockGetSubscribers()
-	n.registerBlockSubscribers()
+	n.h = localHost
 
 	go n.Bootstrap(localHost, kademliaDHT)
 
@@ -133,16 +134,6 @@ func (n *Network) OnStop() {
 	events.NewMinedBlock.Unsubscribe(n.String())
 }
 
-func (n *Network) syncIfBehind(height *big.Int) {
-	if n.networkHeight.Cmp(height) < 0 {
-		n.networkHeight.Set(height)
-		if n.blockChain.LatestBlock().Header.Height.Cmp(height) < 0 {
-			n.Logger.Info("we are behind, start sync", "ours", n.blockChain.LatestBlock().Header.Height, "network", height)
-			n.startSync()
-		}
-	}
-}
-
 func (n *Network) startSync() {
 	if !n.sycing.CompareAndSwap(false, true) {
 		// already started
@@ -154,13 +145,12 @@ func (n *Network) startSync() {
 		height := block.Header.Height
 		if height.Cmp(n.networkHeight) < 0 {
 			n.Logger.Debug("sync in progress", "ours", height, "network", n.networkHeight)
-			n.publishBlockGet(big.NewInt(0).Add(height, common.Big1))
 		} else {
 			n.Logger.Info("sync caught up", "ours", height, "network", n.networkHeight)
 			n.stopSync()
 		}
 	})
-	n.publishBlockGet(big.NewInt(0).Add(n.blockChain.LatestBlock().Header.Height, common.Big1))
+	//to do
 }
 
 func (n *Network) stopSync() {
@@ -214,58 +204,18 @@ func (n *Network) Bootstrap(newNode host.Host, kademliaDHT *dht.IpfsDHT) {
 	}
 	wg.Wait()
 
-	go n.publishBlockHeight()
-	go n.publishBlockGetLoop()
+	//service := NewService(newNode, protocol.ID(ProtocolID), n.blockChain, n.Logger)
+	//err := service.SetupRPC()
+	//if err != nil {
+	//	n.Logger.Error("new RPC service", "err", err)
+	//}
 
-	// We use a rendezvous point "meet me here" to announce our location.
-	// This is like telling your friends to meet you at the Eiffel Tower.
-	//n.Logger.Info("Announcing ourselves...", n.config.RendezvousString)
-	//routingDiscovery := drouting.NewRoutingDiscovery(kademliaDHT)
-	//dutil.Advertise(ctx, routingDiscovery, n.config.RendezvousString)
-	//n.Logger.Debug("Successfully announced!")
+	//n.rpcService = service
 
-	//n.localHost = newNode
-	//n.routingDiscovery = routingDiscovery
-
-	//send.node = n
-
-	//go n.findP2PPeer()
-	//go n.sendInfo()
+	go setupDiscover(ctx, newNode, kademliaDHT, n.config.RendezvousString)
+	go n.notifyPeerFoundEvent()
+	go n.registerBlockSubscribers()
 }
-
-//func (n *Network) findP2PPeer() {
-//	for {
-//		// Now, look for others who have announced
-//		// This is like your friend telling you the location to meet you.
-//		n.Logger.Debug("Searching for other peers...", n.config.RendezvousString)
-//		peerChan, err := n.routingDiscovery.FindPeers(ctx, n.config.RendezvousString)
-//		if err != nil {
-//			panic(err)
-//		}
-//
-//		for peerNode := range peerChan {
-//			if peerNode.ID == n.localHost.ID() {
-//				continue
-//			}
-//
-//			//
-//			err := n.localHost.Connect(context.Background(), peerNode)
-//			if err != nil {
-//				continue
-//			}
-//			n.Logger.Info("Connected to:", peerNode)
-//
-//		}
-//		time.Sleep(time.Second)
-//	}
-//}
-
-//func (n *Network) sendInfo() {
-//	for {
-//		send.SendTestToPeers()
-//		time.Sleep(time.Second)
-//	}
-//}
 
 // discoveryNotifee gets notified when we find a new peer via mDNS discovery
 type discoveryNotifee struct {
@@ -273,31 +223,16 @@ type discoveryNotifee struct {
 	Logger log.Logger
 }
 
-func (n *Network) publishBlockGetLoop() {
+func (n *Network) notifyPeerFoundEvent() {
 	for {
-		height := <-blockGet
-		n.Logger.Info("need block", "height", height)
-		blockInfo := BlockInfo{Height: height}
-		b, err := rlp.EncodeToBytes(blockInfo)
-		if err != nil {
-			n.Logger.Error("failed to encode block for broadcasting", "err", err)
-			return
-		}
-		n.topicBlockGet.Publish(ctx, b)
-	}
-}
+		pi := <-peerNotifier
 
-func (n *Network) publishBlockHeight() {
-	for {
-		peer := <-peerNotifier
-		n.Logger.Info("publish block height", "peer", peer)
-		blockInfo := BlockInfo{Height: n.blockChain.LatestBlock().Header.Height}
-		b, err := rlp.EncodeToBytes(blockInfo)
-		if err != nil {
-			n.Logger.Error("failed to encode block for broadcasting", "err", err)
-			return
-		}
-		n.topicBlockInfo.Publish(ctx, b)
+		n.peerPool[pi.ID.String()] = pi
+
+		gv := version{Height: n.blockChain.LatestBlock().Header.Height.Int64(), AddrFrom: localAddr}
+		data := n.jointMessage(cVersion, gv.serialize())
+
+		n.SendMessage(pi, data)
 	}
 }
 
@@ -315,7 +250,10 @@ func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 	}
 	n.Logger.Debug("connected to peer", "peer", pi)
 
-	peerNotifier <- pi.ID.String()
+	//peers := n.h.Peerstore().Peers()
+	//fmt.Printf("peer len: %d %s\n", len(peers), peers)
+	peerNotifier <- pi
+
 }
 
 const DiscoveryServiceTag = "doid-network"

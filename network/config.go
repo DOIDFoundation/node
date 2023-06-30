@@ -30,7 +30,6 @@ type Config struct {
 	ListenAddresses  string
 	RendezvousString string
 	BootstrapPeers   addrList
-	ProtocolID       string
 }
 
 // DefaultConfig returns a default configuration for a  network
