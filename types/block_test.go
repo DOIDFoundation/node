@@ -12,21 +12,22 @@ import (
 
 func TestHeader(t *testing.T) {
 	h := &types.Header{
-		ParentHash: []byte{0},
-		Miner:      []byte{0},
-		Root:       []byte{0},
-		TxHash:     []byte{0},
-		Difficulty: common.Big0,
-		Height:     common.Big0,
-		Time:       time.Now(),
-		Extra:      []byte{0},
-		Nonce:      types.EncodeNonce(0),
+		ParentHash:  []byte{0},
+		Miner:       []byte{0},
+		Root:        []byte{0},
+		TxHash:      []byte{0},
+		ReceiptHash: []byte{0},
+		Difficulty:  common.Big0,
+		Height:      common.Big0,
+		Extra:       []byte{0},
+		Nonce:       types.EncodeNonce(0),
 	}
 	hash := h.Hash()
 	hCopy := types.CopyHeader(h)
 	hCopyHash := hCopy.Hash()
 	assert.Equal(t, hash, hCopyHash)
 
+	hCopy = types.CopyHeader(h)
 	hCopy.ParentHash[0] = 1
 	hCopyHash = hCopy.Hash()
 	assert.NotEqual(t, hash, hCopyHash)
@@ -47,12 +48,22 @@ func TestHeader(t *testing.T) {
 	assert.NotEqual(t, hash, hCopyHash)
 
 	hCopy = types.CopyHeader(h)
+	hCopy.ReceiptHash[0] = 1
+	hCopyHash = hCopy.Hash()
+	assert.NotEqual(t, hash, hCopyHash)
+
+	hCopy = types.CopyHeader(h)
 	hCopy.Difficulty = common.Big1
 	hCopyHash = hCopy.Hash()
 	assert.NotEqual(t, hash, hCopyHash)
 
 	hCopy = types.CopyHeader(h)
 	hCopy.Height = common.Big1
+	hCopyHash = hCopy.Hash()
+	assert.NotEqual(t, hash, hCopyHash)
+
+	hCopy = types.CopyHeader(h)
+	hCopy.Time = uint64(time.Now().Unix()) + 1
 	hCopyHash = hCopy.Hash()
 	assert.NotEqual(t, hash, hCopyHash)
 

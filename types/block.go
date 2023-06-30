@@ -2,7 +2,6 @@ package types
 
 import (
 	"math/big"
-	"time"
 )
 
 type Block struct {
@@ -60,7 +59,7 @@ type Header struct {
 	ReceiptHash Hash       `json:"receiptsRoot" 	gencodec:"required"`
 	Difficulty  *big.Int   `json:"difficulty"       gencodec:"required"`
 	Height      *big.Int   `json:"height"           gencodec:"required"`
-	Time        time.Time  `json:"timestamp"        gencodec:"required"`
+	Time        uint64     `json:"timestamp"        gencodec:"required"`
 	Extra       HexBytes   `json:"extraData"        gencodec:"required"`
 	Nonce       BlockNonce `json:"nonce"`
 }

@@ -66,13 +66,13 @@ func NewMempool(chain *core.BlockChain, logger log.Logger) *Mempool {
 }
 
 func (pool *Mempool) OnStart() error {
-	pool.reset(nil, types.CopyHeader(pool.chain.CurrentBlock().Header))
+	pool.reset(nil, types.CopyHeader(pool.chain.LatestBlock().Header))
 
 	pool.wg.Add(1)
 	go pool.scheduleReorgLoop()
 
 	events.NewChainHead.Subscribe(pool.String(), func(block *types.Block) {
-		pool.requestReset(pool.chain.CurrentBlock().Header, block.Header)
+		pool.requestReset(pool.chain.LatestBlock().Header, block.Header)
 	})
 	pool.wg.Add(1)
 	go pool.loop()
@@ -278,7 +278,7 @@ func (pool *Mempool) reset(soldHead, newHead *types.Header) {
 
 	// Initialize
 	if newHead == nil {
-		newHead = pool.chain.CurrentBlock().Header
+		newHead = pool.chain.LatestBlock().Header
 	}
 }
 
