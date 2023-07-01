@@ -1,32 +1,26 @@
 package network
 
 import (
-	"bytes"
-	"encoding/gob"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 type version struct {
 	//Version  byte
-	Height   int64
-	AddrFrom string
+	Height uint64
+	ID     string
 }
 
 func (v version) serialize() []byte {
-	var result bytes.Buffer
-	encoder := gob.NewEncoder(&result)
-
-	err := encoder.Encode(v)
+	bz, err := rlp.EncodeToBytes(v)
 	if err != nil {
 		panic(err)
 	}
-	return result.Bytes()
+	return bz
 }
 
 func (v *version) deserialize(d []byte) {
-	decoder := gob.NewDecoder(bytes.NewReader(d))
-	err := decoder.Decode(v)
+	err := rlp.DecodeBytes(d, v)
 	if err != nil {
 		panic(err)
 	}
-
 }

@@ -2,10 +2,9 @@ package network
 
 var (
 	RendezvousString = "meetme"
-	ProtocolID       = "/blockChain/2"
+	ProtocolID       = "/doid/network/0.0.1"
 	ListenHost       = "0.0.0.0"
 	ListenPort       = "3001"
-	localAddr        string
 )
 
 const prefixCMDLength = 12

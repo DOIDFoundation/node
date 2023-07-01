@@ -3,15 +3,16 @@ package network
 import (
 	"bufio"
 	"fmt"
+	"io/ioutil"
+	"log"
+	"math/big"
+	"sync"
+
 	"github.com/DOIDFoundation/node/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
-	"io/ioutil"
-	"log"
-	"math/big"
-	"sync"
 )
 
 func (n *Network) handleStream(stream network.Stream) {
@@ -20,7 +21,7 @@ func (n *Network) handleStream(stream network.Stream) {
 		log.Panic(err)
 	}
 	cmd, content := n.splitMessage(data)
-	n.Logger.Info("cmd", "data", len(data), "content", len(content))
+	n.Logger.Debug("cmd", "data", len(data), "content", len(content))
 	switch command(cmd) {
 	case cVersion:
 		go n.handleVersion(content)
@@ -41,15 +42,15 @@ func (n *Network) handleVersion(content []byte) {
 	v := new(version)
 	v.deserialize(content)
 
-	n.Logger.Info("handle version", "peer", v.AddrFrom)
-	if n.networkHeight.Cmp(big.NewInt(v.Height)) < 0 {
-		n.networkHeight.Set(big.NewInt(v.Height))
-		if n.blockChain.LatestBlock().Header.Height.Cmp(big.NewInt(v.Height)) < 0 {
+	n.Logger.Info("handle version", "peer", v.ID)
+	if n.networkHeight.Uint64() < v.Height {
+		n.networkHeight.SetUint64(v.Height)
+		if n.blockChain.LatestBlock().Header.Height.Uint64() < v.Height {
 			n.Logger.Info("we are behind, start sync", "ours", n.blockChain.LatestBlock().Header.Height, "network", v.Height)
 
-			gh := getBlock{Height: n.blockChain.LatestBlock().Header.Height.Int64() + 1, AddrFrom: localAddr}
+			gh := getBlock{Height: n.blockChain.LatestBlock().Header.Height.Int64() + 1, AddrFrom: n.host.ID().String()}
 			data := n.jointMessage(cGetBlock, gh.serialize())
-			n.SendMessage(n.buildPeerInfoByAddr(v.AddrFrom), data)
+			n.SendMessage(n.buildPeerInfoByAddr(v.ID), data)
 		}
 	}
 }
@@ -68,7 +69,7 @@ func (n *Network) handleGetBlock(content []byte) {
 			n.Logger.Info("failed to encode block for broadcasting", "err", err)
 		}
 		fmt.Printf("send block size: %d\n", len(b))
-		gb := Block{BlockHash: b, AddrFrom: localAddr}
+		gb := Block{BlockHash: b, AddrFrom: n.host.ID().String()}
 		data := n.jointMessage(cBlock, gb.serialize())
 		n.SendMessage(n.buildPeerInfoByAddr(v.AddrFrom), data)
 	}
@@ -94,7 +95,7 @@ func (n *Network) handleBlock(content []byte) {
 		if n.blockChain.LatestBlock().Header.Height.Cmp(n.networkHeight) < 0 {
 			n.Logger.Info("we are behind, start sync", "ours", n.blockChain.LatestBlock().Header.Height, "network", n.networkHeight)
 
-			gh := getBlock{Height: n.blockChain.LatestBlock().Header.Height.Int64() + 1, AddrFrom: localAddr}
+			gh := getBlock{Height: n.blockChain.LatestBlock().Header.Height.Int64() + 1, AddrFrom: n.host.ID().String()}
 			data := n.jointMessage(cGetBlock, gh.serialize())
 			n.SendMessage(n.buildPeerInfoByAddr(v.AddrFrom), data)
 		}
@@ -112,11 +113,11 @@ func (n *Network) handleMyError(content []byte) {
 }
 
 func (n *Network) SendMessage(peer peer.AddrInfo, data []byte) {
-	if err := n.h.Connect(ctx, peer); err != nil {
+	if err := n.host.Connect(ctx, peer); err != nil {
 		n.Logger.Error("Connection failed:", err)
 	}
 
-	stream, err := n.h.NewStream(ctx, peer.ID, protocol.ID(ProtocolID))
+	stream, err := n.host.NewStream(ctx, peer.ID, protocol.ID(ProtocolID))
 	if err != nil {
 		n.Logger.Info("Stream open failed", err)
 	} else {
@@ -141,8 +142,8 @@ func (n *Network) SendMessage(peer peer.AddrInfo, data []byte) {
 }
 
 func (n *Network) SendSignOutToPeers() {
-	ss := "network:" + localAddr + " exist"
-	m := myerror{ss, localAddr}
+	ss := "network:" + n.host.ID().String() + " exist"
+	m := myerror{ss, n.host.ID().String()}
 	data := n.jointMessage(cMyError, m.serialize())
 	for _, v := range peerPool {
 		peerAddr := peer.AddrInfo{ID: peer.ID(v.ID), Addrs: v.Addrs}

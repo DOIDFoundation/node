@@ -53,7 +53,7 @@ func (n *Network) registerBlockSubscribers() {
 				return
 			}
 
-			if msg.ReceivedFrom == n.h.ID() {
+			if msg.ReceivedFrom == n.host.ID() {
 				continue
 			}
 
