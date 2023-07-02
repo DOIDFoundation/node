@@ -7,6 +7,7 @@ import (
 
 type getBlock struct {
 	Height   int64
+	Count    uint64
 	AddrFrom string
 }
 

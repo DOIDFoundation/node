@@ -80,11 +80,16 @@ func (h *Header) Hash() Hash {
 	return rlpHash(h)
 }
 
-func (h *Header) IsValid(parent *Header) bool {
-	return bytes.Equal(h.ParentHash, parent.Hash()) &&
-		h.Height.Uint64() == parent.Height.Uint64()+1 &&
-		h.Time > parent.Time &&
-		h.Difficulty.Cmp(CalcDifficulty(h.Time, parent)) == 0
+func (h *Header) IsValid(parent *Header) error {
+	if h.Height.Uint64() != parent.Height.Uint64()+1 ||
+		!bytes.Equal(h.ParentHash, parent.Hash()) {
+		return ErrNotContiguous
+	}
+	if h.Time <= parent.Time ||
+		h.Difficulty.Cmp(CalcDifficulty(h.Time, parent)) != 0 {
+		return ErrInvalidBlock
+	}
+	return nil
 }
 
 type Headers []*Header

@@ -38,7 +38,8 @@ type Network struct {
 	topicBlock    *pubsub.Topic
 	blockChain    *core.BlockChain
 	networkHeight *big.Int
-	sycing        atomic.Bool
+	syncing       atomic.Bool
+	sync          *syncService
 	peerPool      map[string]peer.AddrInfo
 }
 
@@ -71,7 +72,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	}
 	network.Logger.Info("Host created.", "id", network.host.ID(), "addrs", network.host.Addrs())
 
-	network.discovery = NewDiscovery(network.host, logger)
+	network.discovery = NewDiscovery(logger, network.host)
 	if network.discovery == nil {
 		network.Logger.Error("Failed to create discovery service")
 		return nil
@@ -119,56 +120,67 @@ func (n *Network) OnStart() error {
 	n.discovery.Start()
 
 	go n.Bootstrap(localHost, kademliaDHT)
+	localHost.SetStreamHandler(protocol.ID(ProtocolGetBlock), n.getBlockHandler)
 
 	return nil
 }
 
 // OnStop stops the Network. It implements service.Service.
 func (n *Network) OnStop() {
+	n.stopSync()
 	n.discovery.Stop()
 	events.ForkDetected.Unsubscribe(n.String())
-	events.NewMinedBlock.Unsubscribe(n.String())
+	events.NewChainHead.Unsubscribe(n.String())
 }
 
 func (n *Network) startSync() {
-	if !n.sycing.CompareAndSwap(false, true) {
-		// already started
+	// find a best peer with most total difficulty
+	var best *version
+	for _, id := range n.host.Peerstore().Peers() {
+		v, err := n.host.Peerstore().Get(id, metaVersion)
+		if err != nil {
+			continue
+		}
+		version := v.(version)
+		if best == nil || version.Td.Cmp(best.Td) > 0 {
+			best = &version
+		}
+	}
+	if best == nil || best.Td.Cmp(n.blockChain.GetTd()) <= 0 {
+		n.Logger.Debug("not starting sync", "msg", "no better network td")
+		return
+	}
+	if !n.syncing.CompareAndSwap(false, true) {
+		n.Logger.Debug("not starting sync", "msg", "already started")
 		return
 	}
 	n.Logger.Info("start syncing")
 	events.SyncStarted.Send(struct{}{})
-	events.NewChainHead.Subscribe("network_sync", func(block *types.Block) {
-		height := block.Header.Height
-		if height.Cmp(n.networkHeight) < 0 {
-			n.Logger.Debug("sync in progress", "ours", height, "network", n.networkHeight)
-		} else {
-			n.Logger.Info("sync caught up", "ours", height, "network", n.networkHeight)
-			n.stopSync()
-		}
-	})
-	//to do
+	events.SyncFinished.Subscribe(n.String(), func(data struct{}) { n.stopSync() })
+	n.sync = newSyncService(n.Logger, peerIDFromString(best.ID), n.host, n.blockChain)
+	n.sync.Start()
 }
 
 func (n *Network) stopSync() {
-	if !n.sycing.CompareAndSwap(true, false) {
-		// already stopped
+	events.SyncFinished.Unsubscribe(n.String())
+	if !n.syncing.CompareAndSwap(true, false) {
+		n.Logger.Debug("not stopping sync", "msg", "already stopped")
 		return
 	}
-	events.NewChainHead.Unsubscribe("network_sync")
-	events.SyncFinished.Send(struct{}{})
+	n.sync.Stop()
+	n.sync = nil
 }
 
 func (n *Network) registerEventHandlers() {
 	events.ForkDetected.Subscribe(n.String(), func(data struct{}) {
-		// @todo handle fork event
 		n.startSync()
 	})
-	events.NewMinedBlock.Subscribe(n.String(), func(data *types.Block) {
+	events.NewChainHead.Subscribe(n.String(), func(data *types.Block) {
 		if n.topicBlock == nil {
 			n.Logger.Info("not broadcasting, new block topic not joined")
 			return
 		}
-		b, err := rlp.EncodeToBytes(data)
+		b, err := rlp.EncodeToBytes(newBlock{Block: data, Td: n.blockChain.GetTd()})
 		if err != nil {
 			n.Logger.Error("failed to encode block for broadcasting", "err", err)
 			return

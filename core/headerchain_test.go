@@ -16,13 +16,16 @@ func TestAppendBlocks(t *testing.T) {
 		assert.NoError(t, chain.ApplyBlock(block))
 		blocks = append(blocks, block)
 	}
+
+	// insert all known blocks
 	hc := chain.NewHeaderChain()
 	assert.NoError(t, hc.AppendBlocks(blocks[:5]))
-	assert.Error(t, hc.AppendBlocks(blocks[:3]))
-	assert.Error(t, hc.AppendBlocks(blocks[1:6]))
-	assert.Error(t, hc.AppendBlocks(blocks[4:]))
-	assert.Error(t, hc.AppendBlocks(blocks[6:]))
+	assert.NoError(t, hc.AppendBlocks(blocks[:3]))
+	assert.NoError(t, hc.AppendBlocks(blocks[1:6]))
+	assert.NoError(t, hc.AppendBlocks(blocks[4:]))
+	assert.NoError(t, hc.AppendBlocks(blocks[6:]))
 	assert.NoError(t, hc.AppendBlocks(blocks[5:]))
+	assert.Nil(t, hc.GetTd())
 
 	chain.Close()
 
@@ -42,5 +45,5 @@ func TestAppendBlocks(t *testing.T) {
 	hc = chain.NewHeaderChain()
 	assert.EqualError(t, hc.AppendBlocks(blocks[3:]), core.ErrUnknownAncestor.Error())
 	blocks[1].Header.Time = 1
-	assert.EqualError(t, hc.AppendBlocks(blocks), "invalid block")
+	assert.EqualError(t, hc.AppendBlocks(blocks), types.ErrNotContiguous.Error())
 }

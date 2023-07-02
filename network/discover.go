@@ -24,7 +24,7 @@ type discovery struct {
 	s mdns.Service
 }
 
-func NewDiscovery(h host.Host, logger log.Logger) *discovery {
+func NewDiscovery(logger log.Logger, h host.Host) *discovery {
 	d := &discovery{h: h}
 	d.BaseService = *service.NewBaseService(logger.With("service", "discovery"), "Discovery", d)
 	// setup mDNS discovery to find local peers
@@ -72,8 +72,10 @@ func (n *Network) notifyPeerFoundEvent() {
 
 		n.peerPool[pi.ID.String()] = pi
 
-		gv := version{Height: n.blockChain.LatestBlock().Header.Height.Uint64(), ID: n.host.ID().String()}
-		data := n.jointMessage(cVersion, gv.serialize())
+		gv := version{Height: n.blockChain.LatestBlock().Header.Height.Uint64(),
+			Td: n.blockChain.GetTd(),
+			ID: n.host.ID().String()}
+		data := jointMessage(cVersion, gv.serialize())
 
 		n.SendMessage(pi, data)
 	}

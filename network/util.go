@@ -4,16 +4,19 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-func (n *Network) buildPeerInfoByAddr(addrs string) peer.AddrInfo {
-	id, err := peer.Decode(addrs)
+func peerIDFromString(s string) peer.ID {
+	id, err := peer.Decode(s)
 	if err != nil {
-		n.Logger.Error("failed to decode peer id", "err", err, "id", addrs)
-		return peer.AddrInfo{}
+		return ""
 	}
-	return n.host.Peerstore().PeerInfo(id)
+	return id
 }
 
-func (n *Network) jointMessage(cmd command, content []byte) []byte {
+func (n *Network) peerInfoByID(s string) peer.AddrInfo {
+	return n.host.Peerstore().PeerInfo(peerIDFromString(s))
+}
+
+func jointMessage(cmd command, content []byte) []byte {
 	b := make([]byte, prefixCMDLength)
 	for i, v := range []byte(cmd) {
 		b[i] = v
@@ -23,7 +26,7 @@ func (n *Network) jointMessage(cmd command, content []byte) []byte {
 	return joint
 }
 
-func (n *Network) splitMessage(message []byte) (cmd string, content []byte) {
+func splitMessage(message []byte) (cmd string, content []byte) {
 	cmdBytes := message[:prefixCMDLength]
 	newCMDBytes := make([]byte, 0)
 	for _, v := range cmdBytes {

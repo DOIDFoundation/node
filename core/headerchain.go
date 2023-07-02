@@ -2,7 +2,6 @@ package core
 
 import (
 	"bytes"
-	"errors"
 	"math/big"
 
 	"github.com/DOIDFoundation/node/store"
@@ -22,6 +21,7 @@ type HeaderChain struct {
 	store  *store.BlockStore
 
 	headers []lightHeader
+	last    *types.Header
 	td      *big.Int
 
 	blockCache *lru.Cache // Cache for the most recent blockes
@@ -34,6 +34,10 @@ func newHeaderChain(store *store.BlockStore, logger log.Logger) *HeaderChain {
 		Logger:     logger.With("module", "blockchain"),
 		blockCache: blockCache,
 	}
+}
+
+func (hc *HeaderChain) CanStartFrom(height uint64, hash types.Hash) bool {
+	return hc.store.ReadTd(height, hash) != nil
 }
 
 func (hc *HeaderChain) getBlock(height uint64, hash types.Hash) *types.Block {
@@ -55,40 +59,29 @@ func (hc *HeaderChain) AppendBlocks(blocks []*types.Block) error {
 		return nil
 	}
 
-	first := blocks[0]
-
-	if len(hc.headers) > 0 {
-		last := hc.headers[len(hc.headers)-1]
-		if first.Header.Height.Uint64() != last.Height+1 && !bytes.Equal(first.Header.ParentHash, last.Hash) {
-			hc.Logger.Error("Non contiguous block insert", "height", first.Header.Height, "hash", first.Hash(), "parent", first.Header.ParentHash, "last", last)
-			return errors.New("blocks not contiguous")
-		}
-	} else {
-		hc.td = hc.store.ReadTd(first.Header.Height.Uint64()-1, first.Header.ParentHash)
-		if hc.td == nil {
-			return ErrUnknownAncestor
-		}
-	}
-
-	parent := hc.store.ReadHeader(first.Header.Height.Uint64()-1, first.Header.ParentHash)
-	if !first.Header.IsValid(parent) {
-		hc.Logger.Error("invalid block", "header", first.Header, "last", parent, "hash", parent.Hash())
-		return errors.New("invalid block")
-	}
-
-	// save total difficulty for contiguous blocks
-	var prev *types.Block
+	// save block and calculate total difficulty for contiguous blocks
 	for _, block := range blocks {
-		height := block.Header.Height.Uint64()
-		if prev != nil && !block.Header.IsValid(prev.Header) {
-			hc.Logger.Error("invalid block", "header", block.Header, "prev", prev.Header, "hash", prev.Hash())
-			return errors.New("invalid block")
+		height, hash := block.Header.Height.Uint64(), block.Hash()
+		if hc.last == nil {
+			if bytes.Equal(hc.store.ReadHashByHeight(height), hash) {
+				// skip blocks already in head chain
+				continue
+			}
+
+			hc.last = hc.store.ReadHeader(height-1, block.Header.ParentHash)
+			hc.td = hc.store.ReadTd(height-1, block.Header.ParentHash)
+			if hc.td == nil {
+				return ErrUnknownAncestor
+			}
 		}
-		hash := block.Hash()
+		if err := block.Header.IsValid(hc.last); err != nil {
+			hc.Logger.Error("invalid block", "header", block.Header, "prev", hc.last, "hash", hc.last.Hash(), "err", err)
+			return err
+		}
 		hc.td.Add(hc.td, block.Header.Difficulty)
 		hc.saveAndCacheBlock(block)
 		hc.headers = append(hc.headers, lightHeader{Height: height, Hash: hash})
-		prev = block
+		hc.last = block.Header
 	}
 	return nil
 }

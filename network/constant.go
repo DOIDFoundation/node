@@ -2,7 +2,8 @@ package network
 
 var (
 	RendezvousString = "meetme"
-	ProtocolID       = "/doid/network/0.0.1"
+	ProtocolID       = "/doid/network/1"
+	ProtocolGetBlock = "/doid/block/get/1"
 	ListenHost       = "0.0.0.0"
 	ListenPort       = "3001"
 )
@@ -21,4 +22,8 @@ const (
 	cTransaction command = "transaction"
 	cMyError     command = "myError"
 	cMyTest      command = "myTest"
+)
+
+const (
+	metaVersion = "v"
 )

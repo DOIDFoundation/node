@@ -1,12 +1,15 @@
 package network
 
 import (
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
 type version struct {
 	//Version  byte
 	Height uint64
+	Td     *big.Int
 	ID     string
 }
 

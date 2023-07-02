@@ -117,9 +117,12 @@ func (bc *BlockChain) Close() {
 
 func (bc *BlockChain) registerEventHandlers() {
 	events.NewNetworkBlock.Subscribe("blockchain", func(block *types.Block) {
+		if bytes.Equal(bc.blockStore.ReadHashByHeight(block.Header.Height.Uint64()), block.Hash()) {
+			bc.Logger.Debug("block from network already known", "block", block.Hash(), "header", block.Header)
+			return
+		}
 		if err := bc.ApplyBlock(block); err != nil {
 			bc.Logger.Error("bad block from network", "err", err, "block", block.Hash(), "header", block.Header)
-			// @todo check if fork happened
 			events.ForkDetected.Send(struct{}{})
 		}
 	})
@@ -133,6 +136,10 @@ func (bc *BlockChain) setHead(block *types.Block) {
 	}
 	bc.blockStore.WriteHeadBlockHash(block.Hash())
 	events.NewChainHead.Send(block)
+}
+
+func (bc *BlockChain) HasBlock(height uint64, hash types.Hash) bool {
+	return bytes.Equal(bc.blockStore.ReadHashByHeight(height), hash)
 }
 
 func (bc *BlockChain) BlockByHeight(height uint64) *types.Block {
@@ -182,9 +189,9 @@ func (bc *BlockChain) Simulate(txs types.Txs) (*transactor.ExecutionResult, erro
 }
 
 func (bc *BlockChain) applyBlockAndWrite(block *types.Block) error {
-	if !block.Header.IsValid(bc.LatestBlock().Header) {
-		bc.Logger.Error("invalid block", "header", block.Header, "last", bc.LatestBlock().Header, "hash", bc.LatestBlock().Hash())
-		return errors.New("invalid block")
+	if err := block.Header.IsValid(bc.LatestBlock().Header); err != nil {
+		bc.Logger.Error("invalid block", "header", block.Header, "last", bc.LatestBlock().Header, "hash", bc.LatestBlock().Hash(), "err", err)
+		return err
 	}
 
 	state := bc.state
@@ -227,13 +234,6 @@ func (bc *BlockChain) writeBlockAndTd(block *types.Block) {
 }
 
 func (bc *BlockChain) ApplyBlock(block *types.Block) error {
-	if bc.LatestBlock().Header.Height.Uint64()+1 != block.Header.Height.Uint64() {
-		return fmt.Errorf("block not contiguous, latest height %v, new block height %v", bc.LatestBlock().Header.Height, block.Header.Height)
-	}
-	if !bytes.Equal(block.Header.ParentHash, bc.LatestBlock().Hash()) {
-		return fmt.Errorf("block not contiguous, latest hash %v, new block's parent %v", bc.LatestBlock().Hash(), block.Header.ParentHash)
-	}
-
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
 	if err := bc.applyBlockAndWrite(block); err != nil {
@@ -303,6 +303,9 @@ func (bc *BlockChain) GetTd() *big.Int {
 
 func (bc *BlockChain) ApplyHeaderChain(hc *HeaderChain) error {
 	td := hc.GetTd()
+	if td == nil {
+		return errors.New("not applying empty header chain")
+	}
 	currentBlock := bc.LatestBlock()
 	currentTd := bc.GetTd()
 	if td.Cmp(currentTd) <= 0 {
