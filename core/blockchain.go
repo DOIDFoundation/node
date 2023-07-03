@@ -304,7 +304,7 @@ func (bc *BlockChain) ApplyHeaderChain(hc *HeaderChain) error {
 	// check total difficulty to see if we can switch
 	if latest != nil && currentTd.Cmp(td) < 0 {
 		// reset hash by height to new chain
-		bc.blockStore.DeleteHashByHeightFrom(localParent.Header.Height.Uint64())
+		bc.blockStore.DeleteHashByHeightFrom(localParent.Header.Height.Uint64() + 1)
 		for _, header := range hc.headers {
 			if header.Height > latest.Header.Height.Uint64() {
 				break

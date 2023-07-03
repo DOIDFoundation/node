@@ -19,6 +19,10 @@ func (a *API) GetBlockByHeight(height uint64) *types.Block {
 	return a.chain.BlockByHeight(height)
 }
 
+func (a *API) GetBlockHashByHeight(height uint64) types.Hash {
+	return a.chain.blockStore.ReadHashByHeight(height)
+}
+
 func (a *API) GetBlockByHash(hash types.Hash) *types.Block {
 	return a.chain.blockStore.ReadBlock(*a.chain.blockStore.ReadHeightByHash(hash), hash)
 }

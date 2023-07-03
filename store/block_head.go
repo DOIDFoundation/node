@@ -1,6 +1,10 @@
 package store
 
-import "github.com/DOIDFoundation/node/types"
+import (
+	"math"
+
+	"github.com/DOIDFoundation/node/types"
+)
 
 func (bs *BlockStore) ReadHashByHeight(height uint64) types.Hash {
 	hash, err := bs.db.Get(headerHashKey(height))
@@ -31,7 +35,7 @@ func (bs *BlockStore) DeleteHashByHeight(height uint64) {
 }
 
 func (bs *BlockStore) DeleteHashByHeightFrom(height uint64) {
-	iter, err := bs.db.Iterator(headerHashKey(height), nil)
+	iter, err := bs.db.Iterator(headerHashKey(height), headerHashKey(math.MaxUint64))
 	if err != nil {
 		bs.Logger.Error("failed to delete header hashes since height", "err", err, "height", height)
 		panic(err)
