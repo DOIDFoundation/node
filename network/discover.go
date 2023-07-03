@@ -49,17 +49,17 @@ func (d *discovery) OnStop() {
 // HandlePeerFound connects to peers discovered via mDNS. Once they're connected,
 // the PubSub system will automatically start interacting with them if they also
 // support PubSub.
-func (n *discovery) HandlePeerFound(pi peer.AddrInfo) {
-	if pi.ID.String() == n.h.ID().String() {
+func (d *discovery) HandlePeerFound(pi peer.AddrInfo) {
+	if pi.ID.String() == d.h.ID().String() {
 		return
 	}
-	n.Logger.Debug("discovered new peer", "peer", pi)
+	d.Logger.Debug("discovered new peer", "peer", pi)
 	err := n.h.Connect(context.Background(), pi)
 	if err != nil {
 		n.Logger.Debug("error connecting to peer", "peer", pi, "err", err)
 		return
 	}
-	n.Logger.Debug("connected to peer", "peer", pi)
+	d.Logger.Debug("connected to peer", "peer", pi)
 
 	//peers := n.h.Peerstore().Peers()
 	//fmt.Printf("peer len: %d %s\n", len(peers), peers)
