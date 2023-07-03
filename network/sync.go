@@ -65,10 +65,12 @@ func (s *syncService) doSync() {
 		return
 	}
 	remoteHeight := v.(version).Height
-	start := uint64(0)
+	ancestorHeight := uint64(0)
+	// find which block we can start sync from
 	if remoteHeight > localHeight.Uint64() {
 		// try next block after local height
-		blocks, err := s.getBlocks(stream, localHeight.Uint64()+1, 1)
+		check := localHeight.Uint64() + 1
+		blocks, err := s.getBlocks(stream, check, 1)
 		if err != nil {
 			s.Logger.Info("failed to get block", "err", err)
 			s.dropPeer()
@@ -76,25 +78,31 @@ func (s *syncService) doSync() {
 		}
 		block := blocks[0]
 		if err := s.chain.ApplyBlock(block); err != nil {
+			// failed to apply block, check if we can find ancestor
 			if errors.Is(err, types.ErrNotContiguous) {
-				start = s.findAncestor(stream, localHeight.Uint64())
+				ancestorHeight = s.findAncestor(stream, localHeight.Uint64())
 			} else {
 				s.Logger.Info("failed to apply block", "err", err, "header", block.Header, "hash", block.Hash())
 				s.dropPeer()
 				return
 			}
+		} else if check >= remoteHeight {
+			// only one block behind, no more to sync
+			return
 		} else {
-			start = localHeight.Uint64()
+			// current head is ancestor
+			ancestorHeight = check
 		}
 	} else {
-		start = s.findAncestor(stream, remoteHeight)
+		ancestorHeight = s.findAncestor(stream, remoteHeight)
 	}
-	if start == 0 {
+	if ancestorHeight == 0 {
 		s.Logger.Info("failed to find ancestor")
 		s.dropPeer()
 		return
 	}
-	start += 1
+	// now start batch sync after ancestor
+	start := ancestorHeight + 1
 	s.Logger.Info("start sync", "from", start, "to", remoteHeight)
 	for start <= remoteHeight {
 		count := remoteHeight - start + 1
@@ -107,6 +115,7 @@ func (s *syncService) doSync() {
 			s.dropPeer()
 			return
 		}
+		// add to header chain until we have enough blocks
 		if err := s.hc.AppendBlocks(blocks); err != nil {
 			s.Logger.Info("can not append blocks", "from", start, "count", count, "err", err)
 			s.dropPeer()
@@ -114,6 +123,7 @@ func (s *syncService) doSync() {
 		}
 		start += 16
 	}
+	// apply blocks synced or drop peer
 	if err := s.chain.ApplyHeaderChain(s.hc); err != nil {
 		s.Logger.Info("can not apply header chain", "from", start, "err", err)
 		s.dropPeer()
