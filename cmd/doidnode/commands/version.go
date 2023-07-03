@@ -9,6 +9,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func init() {
+	VersionCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show protocol and library versions")
+}
+
 // VersionCmd ...
 var VersionCmd = &cobra.Command{
 	Use:   "version",
@@ -27,8 +31,4 @@ var VersionCmd = &cobra.Command{
 		fmt.Printf("GOPATH=%s\n", os.Getenv("GOPATH"))
 		fmt.Printf("GOROOT=%s\n", runtime.GOROOT())
 	},
-}
-
-func init() {
-	VersionCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show protocol and library versions")
 }

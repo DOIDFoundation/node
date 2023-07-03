@@ -2,7 +2,6 @@ package store
 
 import (
 	"encoding/binary"
-	"fmt"
 
 	"github.com/DOIDFoundation/node/types"
 )
@@ -10,7 +9,7 @@ import (
 var (
 	headerPrefix       = []byte("h") // headerPrefix + num (uint64 big endian) + hash -> header
 	headerTDSuffix     = []byte("t") // headerPrefix + num (uint64 big endian) + hash + headerTDSuffix -> td
-	headerHashSuffix   = []byte("n") // headerPrefix + num (uint64 big endian) + headerHashSuffix -> hash
+	headerHashPrefix   = []byte("n") // headerHashPrefix + num (uint64 big endian) -> hash
 	headerHeightPrefix = []byte("H") // headerHeightPrefix + hash -> num (uint64 big endian)
 
 	// headBlockKey tracks the latest known full block's hash.
@@ -36,14 +35,10 @@ func headerTDKey(height uint64, hash types.Hash) []byte {
 
 // headerHashKey = headerPrefix + num (uint64 big endian) + headerHashSuffix
 func headerHashKey(height uint64) []byte {
-	return append(append(headerPrefix, encodeBlockHeight(height)...), headerHashSuffix...)
+	return append(headerHashPrefix, encodeBlockHeight(height)...)
 }
 
 // headerHeightKey = headerHeightPrefix + hash
 func headerHeightKey(hash types.Hash) []byte {
 	return append(headerHeightPrefix, hash.Bytes()...)
-}
-
-func dataKey(height uint64) []byte {
-	return []byte(fmt.Sprintf("D:%v", height))
 }

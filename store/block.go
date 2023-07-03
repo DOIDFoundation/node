@@ -32,30 +32,6 @@ func NewBlockStore(logger log.Logger) (*BlockStore, error) {
 		db:     db,
 	}, nil
 }
-func (bs *BlockStore) ReadHeadBlock() *types.Block {
-	headBlockHash := bs.ReadHeadBlockHash()
-	if headBlockHash == nil {
-		return nil
-	}
-	height := bs.ReadHeaderHeight(headBlockHash)
-	if height == nil {
-		return nil
-	}
-	return bs.ReadBlock(*height, headBlockHash)
-}
-
-func (bs *BlockStore) ReadBlockByHeight(height uint64) *types.Block {
-	hash, err := bs.db.Get(headerHashKey(height))
-	if err != nil {
-		bs.Logger.Error("failed to read hash by height", "err", err)
-		return nil
-	}
-
-	if len(hash) == 0 {
-		return nil
-	}
-	return bs.ReadBlock(height, hash)
-}
 
 func (bs *BlockStore) ReadBlock(height uint64, hash types.Hash) *types.Block {
 	header := bs.ReadHeader(height, hash)
@@ -71,6 +47,7 @@ func (bs *BlockStore) ReadBlock(height uint64, hash types.Hash) *types.Block {
 
 func (bs *BlockStore) WriteBlock(block *types.Block) {
 	// bs.WriteData(block.Data)
+	block.Hash() // call hash to fill header if needed
 	bs.WriteHeader(block.Header)
 }
 
@@ -78,7 +55,7 @@ func (bs *BlockStore) WriteBlock(block *types.Block) {
 func (bs *BlockStore) ReadHeader(height uint64, hash types.Hash) *types.Header {
 	bz, err := bs.db.Get(headerKey(height, hash))
 	if err != nil {
-		bs.Logger.Error("failed to read block header", "err", err)
+		bs.Logger.Error("failed to read block header", "err", err, "height", height, "hash", hash)
 		return nil
 	}
 
@@ -88,13 +65,13 @@ func (bs *BlockStore) ReadHeader(height uint64, hash types.Hash) *types.Header {
 
 	header := new(types.Header)
 	if err := rlp.Decode(bytes.NewReader(bz), header); err != nil {
-		bs.Logger.Error("Invalid block header RLP", "err", err)
+		bs.Logger.Error("Invalid block header RLP", "err", err, "height", height, "hash", hash)
 		return nil
 	}
 	return header
 }
 
-// ReadHeader retrieves the block header corresponding to the hash.
+// WriteHeader writes the block header corresponding to the hash.
 func (bs *BlockStore) WriteHeader(header *types.Header) {
 	var (
 		hash   = header.Hash()
@@ -111,15 +88,7 @@ func (bs *BlockStore) WriteHeader(header *types.Header) {
 		bs.Logger.Error("failed to store header by hash", "err", err)
 		panic(err)
 	}
-	bs.WriteHeaderHeight(hash, height)
-	if err := bs.db.Set(headerHashKey(height), hash); err != nil {
-		bs.Logger.Error("failed to store header hash by height", "err", err)
-		panic(err)
-	}
-	if err := bs.db.Set(headerHashKey(height), hash); err != nil {
-		bs.Logger.Error("failed to store header hash by height", "err", err)
-		panic(err)
-	}
+	bs.WriteHeightByHash(hash, height)
 }
 
 // ReadDataRLP retrieves the block body (transactions and uncles) in RLP encoding.
@@ -154,24 +123,13 @@ func (bs *BlockStore) WriteData(data *cmttypes.Data) {
 	bs.Logger.Error("not implemented")
 }
 
-func (bs *BlockStore) ReadHeadBlockHash() types.Hash {
-	data, _ := bs.db.Get(headBlockKey)
-	if len(data) == 0 {
-		return nil
-	}
-	return data
-}
-
-func (bs *BlockStore) WriteHeadBlockHash(hash types.Hash) {
-	if err := bs.db.Set(headBlockKey, hash.Bytes()); err != nil {
-		bs.Logger.Error("Failed to store last block's hash", "err", err)
+// ReadHeightByHash returns the header height assigned to a hash.
+func (bs *BlockStore) ReadHeightByHash(hash types.Hash) *uint64 {
+	data, err := bs.db.Get(headerHeightKey(hash))
+	if err != nil {
+		bs.Logger.Error("failed to read height by hash", "err", err, "hash", hash)
 		panic(err)
 	}
-}
-
-// ReadHeaderHeight returns the header height assigned to a hash.
-func (bs *BlockStore) ReadHeaderHeight(hash types.Hash) *uint64 {
-	data, _ := bs.db.Get(headerHeightKey(hash))
 	if len(data) != 8 {
 		return nil
 	}
@@ -179,8 +137,8 @@ func (bs *BlockStore) ReadHeaderHeight(hash types.Hash) *uint64 {
 	return &height
 }
 
-// WriteHeaderHeight stores the hash->height mapping.
-func (bs *BlockStore) WriteHeaderHeight(hash types.Hash, height uint64) {
+// WriteHeightByHash stores the hash->height mapping.
+func (bs *BlockStore) WriteHeightByHash(hash types.Hash, height uint64) {
 	key := headerHeightKey(hash)
 	enc := encodeBlockHeight(height)
 	if err := bs.db.Set(key, enc); err != nil {
@@ -198,7 +156,7 @@ func (bs *BlockStore) DeleteHeaderHeight(hash types.Hash) {
 }
 
 // ReadTd retrieves a block's total difficulty corresponding to the hash.
-func (bs *BlockStore) ReadTd(hash types.Hash, height uint64) *big.Int {
+func (bs *BlockStore) ReadTd(height uint64, hash types.Hash) *big.Int {
 	data, err := bs.db.Get(headerTDKey(height, hash))
 	if err != nil {
 		bs.Logger.Error("Failed to read block total difficulty", "err", err)
@@ -216,7 +174,7 @@ func (bs *BlockStore) ReadTd(hash types.Hash, height uint64) *big.Int {
 }
 
 // WriteTd stores the total difficulty of a block into the database.
-func (bs *BlockStore) WriteTd(hash types.Hash, height uint64, td *big.Int) {
+func (bs *BlockStore) WriteTd(height uint64, hash types.Hash, td *big.Int) {
 	data, err := rlp.EncodeToBytes(td)
 	if err != nil {
 		bs.Logger.Error("Failed to RLP encode block total difficulty", "err", err)
@@ -229,7 +187,7 @@ func (bs *BlockStore) WriteTd(hash types.Hash, height uint64, td *big.Int) {
 }
 
 // DeleteTd removes all block total difficulty data associated with a hash.
-func (bs *BlockStore) DeleteTd(hash types.Hash, height uint64) {
+func (bs *BlockStore) DeleteTd(height uint64, hash types.Hash) {
 	if err := bs.db.Delete(headerTDKey(height, hash)); err != nil {
 		bs.Logger.Error("Failed to delete block total difficulty", "err", err)
 		panic(err)

@@ -1,9 +1,12 @@
 package network
 
-import "github.com/DOIDFoundation/node/rpc"
+import (
+	"github.com/DOIDFoundation/node/rpc"
+	"github.com/libp2p/go-libp2p/core/peer"
+)
 
 type API struct {
-	node *Network
+	net *Network
 }
 
 type Status struct {
@@ -11,10 +14,18 @@ type Status struct {
 }
 
 func (api *API) Status() Status {
-	return Status{IsRunning: api.node.IsRunning()}
+	return Status{IsRunning: api.net.IsRunning()}
 }
 
-func RegisterAPI(node *Network) {
-	api := &API{node: node}
+func (api *API) PeersInStore() peer.IDSlice {
+	return api.net.host.Peerstore().Peers()
+}
+
+func (api *API) Peers() peer.IDSlice {
+	return api.net.host.Network().Peers()
+}
+
+func RegisterAPI(net *Network) {
+	api := &API{net: net}
 	rpc.RegisterName("network", api)
 }

@@ -1,11 +1,18 @@
 package network
 
 import (
+	"math/big"
+
 	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
+
+type newBlock struct {
+	Block *types.Block
+	Td    *big.Int
+}
 
 func (n *Network) registerBlockSubscribers() {
 	logger := n.Logger.With("topic", "blocks")
@@ -27,15 +34,19 @@ func (n *Network) registerBlockSubscribers() {
 	// message.
 	pipeline := func(msg *pubsub.Message) {
 		data := msg.GetData()
-		block := new(types.Block)
-		err := rlp.DecodeBytes(data, block)
+		blockEvent := new(newBlock)
+		err := rlp.DecodeBytes(data, blockEvent)
 		if err != nil {
 			logger.Error("failed to decode received block", "err", err)
 			return
 		}
-		logger.Debug("got message blocks", "height", block.Header.Height, "peer", msg.GetFrom())
+		logger.Debug("got message blocks", "height", blockEvent.Block.Header.Height, "td", blockEvent.Td, "peer", msg.GetFrom())
+		n.host.Peerstore().Put(msg.GetFrom(), metaVersion,
+			version{Height: blockEvent.Block.Header.Height.Uint64(),
+				Td: blockEvent.Td,
+				ID: msg.GetFrom().String()})
 
-		events.NewNetworkBlock.Send(block)
+		events.NewNetworkBlock.Send(blockEvent.Block)
 	}
 
 	// The main message loop for receiving incoming messages from this subscription.
@@ -53,7 +64,7 @@ func (n *Network) registerBlockSubscribers() {
 				return
 			}
 
-			if msg.ReceivedFrom == n.h.ID() {
+			if msg.ReceivedFrom == n.host.ID() {
 				continue
 			}
 

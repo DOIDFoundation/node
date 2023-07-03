@@ -256,7 +256,7 @@ func (c *Consensus) commitWork() {
 	header.ParentHash = parent.Hash()
 	header.Time = uint64(time.Now().Unix())
 	header.Height.Add(header.Height, big.NewInt(1))
-	header.Difficulty.Set(calcDifficulty(header.Time, parent.Header))
+	header.Difficulty.Set(types.CalcDifficulty(header.Time, parent.Header))
 	header.Root = result.StateRoot
 	header.TxHash = result.TxRoot
 	header.ReceiptHash = result.ReceiptRoot
@@ -269,59 +269,4 @@ func (c *Consensus) commitWork() {
 		c.Logger.Info("exiting, work not committed")
 		return
 	}
-}
-
-// Some weird constants to avoid constant memory allocs for them.
-var (
-	expDiffPeriod = big.NewInt(100000)
-	big1          = big.NewInt(1)
-	big2          = big.NewInt(2)
-	big9          = big.NewInt(9)
-	big10         = big.NewInt(10)
-	bigMinus99    = big.NewInt(-99)
-
-	DifficultyBoundDivisor = big.NewInt(2048)   // The bound divisor of the difficulty, used in the update calculations.
-	GenesisDifficulty      = big.NewInt(131072) // Difficulty of the Genesis block.
-	MinimumDifficulty      = big.NewInt(131072) // The minimum that the difficulty may ever be.
-	DurationLimit          = big.NewInt(13)     // The decision boundary on the blocktime duration used to determine whether difficulty should go up or not.
-)
-
-func calcDifficulty(time uint64, parent *types.Header) *big.Int {
-	// https://github.com/ethereum/EIPs/blob/master/EIPS/eip-2.md
-	// algorithm:
-	// diff = (parent_diff +
-	//         (parent_diff / 2048 * max(1 - (block_timestamp - parent_timestamp) // 10, -99))
-	//        ) + 2^(periodCount - 2)
-
-	// 1 - (block_timestamp - parent_timestamp) // 10
-	x := new(big.Int).SetUint64(time - parent.Time)
-	x.Div(x, big10)
-	x.Sub(big1, x)
-
-	// max(1 - (block_timestamp - parent_timestamp) // 10, -99)
-	if x.Cmp(bigMinus99) < 0 {
-		x.Set(bigMinus99)
-	}
-	y := new(big.Int)
-	// (parent_diff + parent_diff // 2048 * max(1 - (block_timestamp - parent_timestamp) // 10, -99))
-	y.Div(parent.Difficulty, DifficultyBoundDivisor)
-	x.Mul(y, x)
-	x.Add(parent.Difficulty, x)
-
-	// minimum difficulty can ever be (before exponential factor)
-	if x.Cmp(MinimumDifficulty) < 0 {
-		x.Set(MinimumDifficulty)
-	}
-	// for the exponential factor
-	periodCount := new(big.Int).Add(parent.Height, big1)
-	periodCount.Div(periodCount, expDiffPeriod)
-
-	// the exponential factor, commonly referred to as "the bomb"
-	// diff = diff + 2^(periodCount - 2)
-	if periodCount.Cmp(big1) > 0 {
-		y.Sub(periodCount, big2)
-		y.Exp(big2, y, nil)
-		x.Add(x, y)
-	}
-	return x
 }

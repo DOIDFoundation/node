@@ -85,26 +85,25 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 			TxHash:     hexutil.MustDecode("0xE3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"),
 		})
 		bc.latestTD = new(big.Int)
-		bc.writeBlock(block)
+		bc.writeBlockAndTd(block)
+		bc.blockStore.WriteHashByHeight(block.Header.Height.Uint64(), block.Hash())
 		bc.blockStore.WriteHeadBlockHash(block.Hash())
-		bc.latestBlock = block
 		if hash, version, err := bc.state.SaveVersion(); err != nil || version != 1 || !bytes.Equal(hash, block.Header.Root) {
 			logger.Error("failed to save genesis block state", "err", err, "block", block.Header, "newHash", hash, "newVersion", version)
 			return nil, err
 		}
-	} else {
-		bc.Logger.Info("load head block", "height", block.Header.Height, "header", block.Header)
-		bc.latestTD = bc.blockStore.ReadTd(block.Hash(), block.Header.Height.Uint64())
-		bc.latestBlock = block
-		if err = bc.loadLatestState(); err != nil {
-			logger.Error("failed to load latest block state", "err", err, "block", block.Header)
-			return nil, err
-		}
 	}
+	bc.Logger.Info("load head block", "height", block.Header.Height, "header", block.Header)
+	bc.rewindToBlock(block)
 
 	bc.registerEventHandlers()
+	RegisterAPI(bc)
 	failed = false
 	return bc, nil
+}
+
+func (bc *BlockChain) NewHeaderChain() *HeaderChain {
+	return newHeaderChain(bc.blockStore, bc.Logger)
 }
 
 func (bc *BlockChain) Close() {
@@ -119,9 +118,12 @@ func (bc *BlockChain) Close() {
 
 func (bc *BlockChain) registerEventHandlers() {
 	events.NewNetworkBlock.Subscribe("blockchain", func(block *types.Block) {
+		if bytes.Equal(bc.blockStore.ReadHashByHeight(block.Header.Height.Uint64()), block.Hash()) {
+			bc.Logger.Debug("block from network already known", "block", block.Hash(), "header", block.Header)
+			return
+		}
 		if err := bc.ApplyBlock(block); err != nil {
 			bc.Logger.Error("bad block from network", "err", err, "block", block.Hash(), "header", block.Header)
-			// @todo check if fork happened
 			events.ForkDetected.Send(struct{}{})
 		}
 	})
@@ -129,13 +131,20 @@ func (bc *BlockChain) registerEventHandlers() {
 
 func (bc *BlockChain) setHead(block *types.Block) {
 	bc.Logger.Info("head block", "block", block.Hash(), "header", block.Header)
+	if bc.state.Version() != block.Header.Height.Int64() {
+		bc.Logger.Error("block height and state version mismatch", "state", bc.state.Version(), "header", block.Header)
+		panic("state and block mismatch")
+	}
 	bc.blockStore.WriteHeadBlockHash(block.Hash())
-	bc.latestBlock = block
 	events.NewChainHead.Send(block)
 }
 
+func (bc *BlockChain) HasBlock(height uint64, hash types.Hash) bool {
+	return bytes.Equal(bc.blockStore.ReadHashByHeight(height), hash)
+}
+
 func (bc *BlockChain) BlockByHeight(height uint64) *types.Block {
-	return bc.blockStore.ReadBlockByHeight(height)
+	return bc.blockStore.ReadBlock(height, bc.blockStore.ReadHashByHeight(height))
 }
 
 // LatestBlock retrieves the latest head block of the canonical chain. The
@@ -181,6 +190,11 @@ func (bc *BlockChain) Simulate(txs types.Txs) (*transactor.ExecutionResult, erro
 }
 
 func (bc *BlockChain) applyBlockAndWrite(block *types.Block) error {
+	if err := block.Header.IsValid(bc.LatestBlock().Header); err != nil {
+		bc.Logger.Error("invalid block", "header", block.Header, "last", bc.LatestBlock().Header, "hash", bc.LatestBlock().Hash(), "err", err)
+		return err
+	}
+
 	state := bc.state
 
 	result, err := transactor.ApplyTxs(state, block.Data.Txs)
@@ -209,74 +223,26 @@ func (bc *BlockChain) applyBlockAndWrite(block *types.Block) error {
 		state.DeleteVersion(version)
 		return fmt.Errorf("state hash mismatch, block root %v, got %v", block.Header.Root, hash)
 	}
-	bc.writeBlock(block)
+	bc.writeBlockAndTd(block)
+	bc.latestBlock = block
 	return nil
 }
 
-func (bc *BlockChain) writeBlock(block *types.Block) {
+func (bc *BlockChain) writeBlockAndTd(block *types.Block) {
 	bc.blockStore.WriteBlock(block)
 	bc.latestTD.Add(bc.latestTD, block.Header.Difficulty)
-	bc.blockStore.WriteTd(block.Hash(), block.Header.Height.Uint64(), bc.latestTD)
+	bc.blockStore.WriteTd(block.Header.Height.Uint64(), block.Hash(), bc.latestTD)
 }
 
 func (bc *BlockChain) ApplyBlock(block *types.Block) error {
-	if bc.LatestBlock().Header.Height.Uint64()+1 != block.Header.Height.Uint64() {
-		return fmt.Errorf("block not contiguous, latest height %v, new block height %v", bc.LatestBlock().Header.Height, block.Header.Height)
-	}
-	if !bytes.Equal(block.Header.ParentHash, bc.LatestBlock().Hash()) {
-		return fmt.Errorf("block not contiguous, latest hash %v, new block's parent %v", bc.LatestBlock().Hash(), block.Header.ParentHash)
-	}
-
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
 	if err := bc.applyBlockAndWrite(block); err != nil {
 		return err
 	}
+	bc.blockStore.WriteHashByHeight(block.Header.Height.Uint64(), block.Hash())
 	bc.setHead(block)
 
-	return nil
-}
-
-func (bc *BlockChain) InsertBlocks(blocks []*types.Block) error {
-	if len(blocks) == 0 {
-		return nil
-	}
-
-	// we can not find first block's parent
-	first := blocks[0]
-	localParent := bc.BlockByHeight(first.Header.Height.Uint64() - 1)
-	if localParent == nil || !bytes.Equal(localParent.Hash(), first.Header.ParentHash) {
-		return ErrUnknownAncestor
-	}
-
-	// check if blocks to import are contiguous
-	var prev *types.Block
-	for _, block := range blocks {
-		if prev != nil && block.Header.Height.Uint64() != prev.Header.Height.Uint64()+1 && !bytes.Equal(block.Header.ParentHash, prev.Hash()) {
-			bc.Logger.Error("Non contiguous block insert", "height", block.Header.Height, "hash", block.Hash(),
-				"parent", block.Header.ParentHash, "prev", prev.Header)
-			return errors.New("blocks not continues")
-		}
-		prev = block
-	}
-
-	bc.mu.Lock()
-	defer bc.mu.Unlock()
-
-	currentTd := new(big.Int)
-	currentTd.Set(bc.latestTD)
-
-	bc.rewindToBlock(localParent)
-
-	for _, block := range blocks {
-		if err := bc.applyBlockAndWrite(block); err != nil {
-			// error occurs, rollback, maybe we can reapply dropped blocks here to speed up
-			bc.rewindToBlock(localParent)
-			return err
-		}
-	}
-
-	bc.setHead(blocks[len(blocks)-1])
 	return nil
 }
 
@@ -286,5 +252,79 @@ func (bc *BlockChain) rewindToBlock(block *types.Block) {
 		bc.Logger.Error("failed to rewind state", "err", err, "height", block.Header.Height)
 		panic(err)
 	}
-	bc.latestTD = bc.blockStore.ReadTd(block.Hash(), block.Header.Height.Uint64())
+	bc.latestTD = bc.blockStore.ReadTd(block.Header.Height.Uint64(), block.Hash())
+}
+
+func (bc *BlockChain) GetTd() *big.Int {
+	return bc.latestTD
+}
+
+func (bc *BlockChain) ApplyHeaderChain(hc *HeaderChain) error {
+	td := hc.GetTd()
+	if td == nil {
+		return errors.New("not applying empty header chain")
+	}
+	currentBlock := bc.LatestBlock()
+	currentTd := bc.GetTd()
+	if td.Cmp(currentTd) <= 0 {
+		return errors.New("total difficulty lower than current")
+	}
+
+	if len(hc.headers) == 0 {
+		return errors.New("not applying empty header chain")
+	}
+
+	// check if we can find first block's parent
+	first := hc.getBlock(hc.headers[0].Height, hc.headers[0].Hash)
+	localParent := bc.BlockByHeight(first.Header.Height.Uint64() - 1)
+	if localParent == nil || !bytes.Equal(localParent.Hash(), first.Header.ParentHash) {
+		return ErrUnknownAncestor
+	}
+
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+
+	// rewind state to parent of first block
+	bc.rewindToBlock(localParent)
+	// td is also set to parent of first block
+	td = bc.blockStore.ReadTd(localParent.Header.Height.Uint64(), localParent.Hash())
+
+	// apply all valid blocks and sum total difficulty
+	var latest *types.Block
+	for _, header := range hc.headers {
+		block := hc.getBlock(header.Height, header.Hash)
+		if err := bc.applyBlockAndWrite(block); err != nil {
+			bc.Logger.Error("failed to apply block", "err", err, "header", block.Header)
+			break
+		}
+		td.Add(td, block.Header.Difficulty)
+		latest = block
+	}
+
+	// check total difficulty to see if we can switch
+	if latest != nil && currentTd.Cmp(td) < 0 {
+		// reset hash by height to new chain
+		bc.blockStore.DeleteHashByHeightFrom(localParent.Header.Height.Uint64() + 1)
+		for _, header := range hc.headers {
+			if header.Height > latest.Header.Height.Uint64() {
+				break
+			}
+			bc.blockStore.WriteHashByHeight(header.Height, header.Hash)
+		}
+		// switch to new chain
+		bc.setHead(latest)
+		return nil
+	}
+
+	// rollback
+	bc.rewindToBlock(localParent)
+	for i := localParent.Header.Height.Uint64() + 1; i <= currentBlock.Header.Height.Uint64(); i++ {
+		block := bc.blockStore.ReadBlock(i, bc.blockStore.ReadHashByHeight(i))
+		if err := bc.applyBlockAndWrite(block); err != nil {
+			bc.Logger.Error("failed to apply block", "err", err, "header", block.Header)
+			panic("failed to rollback blocks")
+		}
+	}
+	bc.setHead(currentBlock)
+	return errors.New("total difficulty lower than current")
 }

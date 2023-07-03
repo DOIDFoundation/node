@@ -2,10 +2,10 @@ package network
 
 var (
 	RendezvousString = "meetme"
-	ProtocolID       = "/blockChain/2"
+	ProtocolID       = "/doid/network/1"
+	ProtocolGetBlock = "/doid/block/get/1"
 	ListenHost       = "0.0.0.0"
 	ListenPort       = "3001"
-	localAddr        string
 )
 
 const prefixCMDLength = 12
@@ -17,9 +17,11 @@ const (
 	cVersion     command = "version"
 	cGetHash     command = "getHash"
 	cHashMap     command = "hashMap"
-	cGetBlock    command = "getBlock"
-	cBlock       command = "block"
 	cTransaction command = "transaction"
 	cMyError     command = "myError"
 	cMyTest      command = "myTest"
+)
+
+const (
+	metaVersion = "v"
 )
