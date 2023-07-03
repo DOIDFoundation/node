@@ -1,8 +1,9 @@
 package network
 
 import (
-	maddr "github.com/multiformats/go-multiaddr"
 	"strings"
+
+	maddr "github.com/multiformats/go-multiaddr"
 )
 
 // A new type we need for writing a custom flag parser
@@ -27,9 +28,7 @@ func (al *addrList) Set(value string) error {
 
 // Config defines the top level configuration for a network
 type Config struct {
-	ListenAddresses  string
-	RendezvousString string
-	BootstrapPeers   addrList
+	BootstrapPeers addrList
 }
 
 // DefaultConfig returns a default configuration for a  network
