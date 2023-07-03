@@ -74,7 +74,7 @@ func (n *Network) notifyPeerFoundEvent() {
 
 		n.peerPool[pi.ID.String()] = pi
 
-		gv := version{Height: n.blockChain.LatestBlock().Header.Height.Uint64(),
+		gv := peerState{Height: n.blockChain.LatestBlock().Header.Height.Uint64(),
 			Td: n.blockChain.GetTd(),
 			ID: n.host.ID().String()}
 		data := jointMessage(cVersion, gv.serialize())
@@ -121,7 +121,7 @@ func (d *discovery) setupDiscover() {
 			}
 
 			for p := range peers {
-				if p.ID == d.h.ID() {
+				if p.ID == d.h.ID() || len(p.Addrs) == 0 {
 					continue
 				}
 				d.Logger.Debug("found peer", "peer", p)

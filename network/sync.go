@@ -64,7 +64,7 @@ func (s *syncService) doSync() {
 		s.dropPeer()
 		return
 	}
-	remoteHeight := v.(version).Height
+	remoteHeight := v.(peerState).Height
 	ancestorHeight := uint64(0)
 	// find which block we can start sync from
 	if remoteHeight > localHeight.Uint64() {

@@ -13,6 +13,7 @@ import (
 	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/types"
+	"github.com/DOIDFoundation/node/version"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -23,6 +24,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/libp2p/go-libp2p/core/routing"
+	"github.com/libp2p/go-libp2p/p2p/security/noise"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/spf13/viper"
 )
@@ -71,11 +74,15 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	network.host, err = libp2p.New(
 		libp2p.Identity(network.loadPrivateKey()),
 		libp2p.ListenAddrs(addr),
-		// // Let this host use the DHT to find other hosts
-		// libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
-		// 	idht, err = dht.New(ctx, h)
-		// 	return idht, err
-		// }),
+		libp2p.UserAgent(version.VersionWithCommit()),
+		libp2p.Security(noise.ID, noise.New),
+		// Attempt to open ports using uPNP for NATed hosts.
+		libp2p.NATPortMap(),
+		// Let this host use the DHT to find other hosts
+		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
+			idht, err := dht.New(ctx, h)
+			return idht, err
+		}),
 	)
 	if err != nil {
 		network.Logger.Error("Failed to create libp2p host", "err", err)
@@ -132,13 +139,13 @@ func (n *Network) OnStop() {
 
 func (n *Network) startSync() {
 	// find a best peer with most total difficulty
-	var best *version
+	var best *peerState
 	for _, id := range n.host.Peerstore().Peers() {
 		v, err := n.host.Peerstore().Get(id, metaVersion)
 		if err != nil {
 			continue
 		}
-		version := v.(version)
+		version := v.(peerState)
 		if best == nil || version.Td.Cmp(best.Td) > 0 {
 			best = &version
 		}
