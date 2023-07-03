@@ -97,6 +97,7 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 	bc.rewindToBlock(block)
 
 	bc.registerEventHandlers()
+	RegisterAPI(bc)
 	failed = false
 	return bc, nil
 }

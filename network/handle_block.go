@@ -80,7 +80,7 @@ func (n *Network) getBlockHandler(s network.Stream) {
 		for i := uint64(0); i < req.Count.Uint64(); i++ {
 			block := n.blockChain.BlockByHeight(req.From.Uint64() + i)
 			if block == nil {
-				errCh <- fmt.Errorf("block %v not found", req.From)
+				errCh <- fmt.Errorf("block %v not found", req.From.Uint64()+i)
 				return
 			}
 			blocks = append(blocks, block)
