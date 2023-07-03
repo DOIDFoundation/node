@@ -17,8 +17,6 @@ const (
 	cVersion     command = "version"
 	cGetHash     command = "getHash"
 	cHashMap     command = "hashMap"
-	cGetBlock    command = "getBlock"
-	cBlock       command = "block"
 	cTransaction command = "transaction"
 	cMyError     command = "myError"
 	cMyTest      command = "myTest"

@@ -5,10 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math/big"
 
-	"github.com/DOIDFoundation/node/types"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -24,10 +21,6 @@ func (n *Network) handleStream(stream network.Stream) {
 	switch command(cmd) {
 	case cVersion:
 		go n.handleVersion(content)
-	case cGetBlock:
-		go n.handleGetBlock(content)
-	case cBlock:
-		go n.handleBlock(content)
 	case cMyError:
 		go n.handleMyError(content)
 	}
@@ -43,55 +36,6 @@ func (n *Network) handleVersion(content []byte) {
 	if td.Cmp(v.Td) < 0 {
 		n.Logger.Info("we are behind, start sync", "ourHeight", n.blockChain.LatestBlock().Header.Height, "ourTD", td, "networkHeight", v.Height, "networkTD", v.Td)
 		n.startSync()
-	}
-}
-
-func (n *Network) handleGetBlock(content []byte) {
-	v := getBlock{}
-	v.deserialize(content)
-
-	n.Logger.Info("handle getblock", "height", v.Height)
-	if big.NewInt(v.Height).Cmp(n.blockChain.LatestBlock().Header.Height) <= 0 {
-		block := n.blockChain.BlockByHeight(uint64(v.Height))
-
-		b, err := rlp.EncodeToBytes(block)
-		n.Logger.Info("encode block for broadcasting", "size", len(b), "height", v.Height)
-		if err != nil {
-			n.Logger.Info("failed to encode block for broadcasting", "err", err)
-		}
-		fmt.Printf("send block size: %d\n", len(b))
-		gb := Block{BlockHash: b, AddrFrom: n.host.ID().String()}
-		data := jointMessage(cBlock, gb.serialize())
-		n.SendMessage(n.peerInfoByID(v.AddrFrom), data)
-	}
-}
-
-func (n *Network) handleBlock(content []byte) {
-	v := Block{}
-	v.deserialize(content)
-
-	block := new(types.Block)
-	err := rlp.DecodeBytes(v.BlockHash, block)
-	if err != nil {
-		n.Logger.Info("failed to decode received block", "Peer", v.AddrFrom, "err", err)
-		return
-	}
-	if n.blockChain.LatestBlock().Header.Height.Int64() < block.Header.Height.Int64() {
-		n.Logger.Info("apply block", "Peer", v.AddrFrom, "block height", block.Header.Height)
-		err = n.blockChain.InsertBlocks([]*types.Block{block})
-		if err != nil {
-			n.Logger.Info("failed to apply block", "Peer", v.AddrFrom, "err", err)
-		}
-
-		if n.blockChain.LatestBlock().Header.Height.Cmp(n.networkHeight) < 0 {
-			n.Logger.Info("we are behind, start sync", "ours", n.blockChain.LatestBlock().Header.Height, "network", n.networkHeight)
-
-			gh := getBlock{Height: n.blockChain.LatestBlock().Header.Height.Int64() + 1, AddrFrom: n.host.ID().String()}
-			data := jointMessage(cGetBlock, gh.serialize())
-			n.SendMessage(n.peerInfoByID(v.AddrFrom), data)
-		}
-	} else {
-		return
 	}
 }
 
