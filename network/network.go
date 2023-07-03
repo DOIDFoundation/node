@@ -217,7 +217,7 @@ func (n *Network) Bootstrap(newNode host.Host, kademliaDHT *dht.IpfsDHT) {
 
 	//n.rpcService = service
 
-	go setupDiscover(ctx, newNode, kademliaDHT, n.config.RendezvousString)
+	go setupDiscover(ctx, newNode, kademliaDHT, viper.GetString(flags.P2P_Rendezvous))
 	go n.notifyPeerFoundEvent()
 	go n.registerBlockSubscribers()
 }
