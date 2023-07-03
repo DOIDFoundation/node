@@ -2,7 +2,10 @@ package network
 
 import (
 	"context"
+	"errors"
 	"math/big"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -57,15 +61,22 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	}
 	network.BaseService = *service.NewBaseService(logger.With("module", "network"), "Network", network)
 
-	var opts []libp2p.Option
 	addr, err := multiaddr.NewMultiaddr(viper.GetString(flags.P2P_Addr))
 	if err != nil {
 		network.Logger.Error("Failed to parse p2p.addr", "err", err, "addr", viper.GetString(flags.P2P_Addr))
 		return nil
 	}
-	opts = append(opts, libp2p.ListenAddrs(addr))
 
-	network.host, err = libp2p.New(opts...)
+	// var idht *dht.IpfsDHT
+	network.host, err = libp2p.New(
+		libp2p.Identity(network.loadPrivateKey()),
+		libp2p.ListenAddrs(addr),
+		// // Let this host use the DHT to find other hosts
+		// libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
+		// 	idht, err = dht.New(ctx, h)
+		// 	return idht, err
+		// }),
+	)
 	if err != nil {
 		network.Logger.Error("Failed to create libp2p host", "err", err)
 		return nil
@@ -97,22 +108,6 @@ func (n *Network) OnStart() error {
 	// initiates a connection and starts a stream with this peer.
 	localHost.SetStreamHandler(protocol.ID(ProtocolID), n.handleStream)
 
-	// Start a DHT, for use in peer discovery. We can't just make a new DHT
-	// client because we want each peer to maintain its own local copy of the
-	// DHT, so that the bootstrapping network of the DHT can go down without
-	// inhibiting future peer discovery.
-	kademliaDHT, err := dht.New(ctx, localHost)
-	if err != nil {
-		return err
-	}
-
-	// Bootstrap the DHT. In the default configuration, this spawns a Background
-	// thread that will refresh the peer table every five minutes.
-	n.Logger.Debug("Bootstrapping the DHT")
-	if err = kademliaDHT.Bootstrap(ctx); err != nil {
-		return err
-	}
-
 	//_ = viper.GetString(node.config.BootstrapPeers)
 	if len(n.config.BootstrapPeers) == 0 {
 		n.config.BootstrapPeers = dht.DefaultBootstrapPeers
@@ -120,7 +115,7 @@ func (n *Network) OnStart() error {
 
 	n.discovery.Start()
 
-	go n.Bootstrap(localHost, kademliaDHT)
+	go n.Bootstrap(localHost)
 	localHost.SetStreamHandler(protocol.ID(ProtocolGetBlock), n.getBlockHandler)
 
 	return nil
@@ -130,6 +125,7 @@ func (n *Network) OnStart() error {
 func (n *Network) OnStop() {
 	n.stopSync()
 	n.discovery.Stop()
+	n.host.Close()
 	events.ForkDetected.Unsubscribe(n.String())
 	events.NewMinedBlock.Unsubscribe(n.String())
 }
@@ -191,7 +187,7 @@ func (n *Network) registerEventHandlers() {
 	})
 }
 
-func (n *Network) Bootstrap(newNode host.Host, kademliaDHT *dht.IpfsDHT) {
+func (n *Network) Bootstrap(newNode host.Host) {
 	// Let's connect to the bootstrap nodes first. They will tell us about the
 	// other nodes in the network.
 	var wg sync.WaitGroup
@@ -217,7 +213,61 @@ func (n *Network) Bootstrap(newNode host.Host, kademliaDHT *dht.IpfsDHT) {
 
 	//n.rpcService = service
 
-	go setupDiscover(ctx, newNode, kademliaDHT, viper.GetString(flags.P2P_Rendezvous))
 	go n.notifyPeerFoundEvent()
 	go n.registerBlockSubscribers()
+}
+
+func (n *Network) loadPrivateKey() crypto.PrivKey {
+	// try base64 key flag
+	if viper.IsSet(flags.P2P_Key) {
+		priv, err := decodeKey(viper.GetString(flags.P2P_Key))
+		if err != nil {
+			n.Logger.Error("Failed to parse p2p key", "err", err)
+			panic(err)
+		}
+		return priv
+	}
+
+	var priv crypto.PrivKey
+	// try key file first
+	keyFile := filepath.Join(viper.GetString(flags.Home), viper.GetString(flags.P2P_KeyFile))
+	bz, err := os.ReadFile(keyFile)
+	logger := n.Logger.With("file", keyFile)
+	if err == nil {
+		priv, err = decodeKey(string(bz))
+		if err != nil {
+			logger.Error("Failed to parse p2p key file", "err", err)
+			panic(err)
+		}
+	} else if errors.Is(err, os.ErrNotExist) && viper.GetString(flags.P2P_KeyFile) == "p2p.key" {
+		priv, _, err = crypto.GenerateKeyPair(
+			crypto.Ed25519, // Select your key type. Ed25519 are nice short
+			-1,             // Select key length when possible (i.e. RSA).
+		)
+		if err != nil {
+			logger.Error("Failed to generate p2p key", "err", err)
+			panic(err)
+		}
+		bz, err = priv.Raw()
+		if err == nil {
+			err = os.WriteFile(keyFile, []byte(crypto.ConfigEncodeKey(bz)), 0600)
+		}
+		if err != nil {
+			logger.Error("Failed to write p2p key bytes", "err", err)
+		}
+	} else {
+		logger.Error("Failed to read p2p key file", "err", err)
+		panic(err)
+	}
+
+	return priv
+}
+
+func decodeKey(s string) (crypto.PrivKey, error) {
+	bz, err := crypto.ConfigDecodeKey(s)
+	if err != nil {
+		return nil, err
+	} else {
+		return crypto.UnmarshalEd25519PrivateKey(bz)
+	}
 }

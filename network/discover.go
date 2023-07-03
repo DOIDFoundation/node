@@ -37,6 +37,8 @@ func (d *discovery) OnStart() error {
 		d.Logger.Error("failed to start mdns discovery", "err", err)
 		return err
 	}
+
+	go d.setupDiscover()
 	return nil
 }
 
@@ -49,17 +51,17 @@ func (d *discovery) OnStop() {
 // HandlePeerFound connects to peers discovered via mDNS. Once they're connected,
 // the PubSub system will automatically start interacting with them if they also
 // support PubSub.
-func (n *discovery) HandlePeerFound(pi peer.AddrInfo) {
-	if pi.ID.String() == n.h.ID().String() {
+func (d *discovery) HandlePeerFound(pi peer.AddrInfo) {
+	if pi.ID.String() == d.h.ID().String() {
 		return
 	}
-	n.Logger.Debug("discovered new peer", "peer", pi)
-	err := n.h.Connect(context.Background(), pi)
+	d.Logger.Debug("discovered new peer", "peer", pi)
+	err := d.h.Connect(context.Background(), pi)
 	if err != nil {
-		n.Logger.Debug("error connecting to peer", "peer", pi, "err", err)
+		d.Logger.Debug("error connecting to peer", "peer", pi, "err", err)
 		return
 	}
-	n.Logger.Debug("connected to peer", "peer", pi)
+	d.Logger.Debug("connected to peer", "peer", pi)
 
 	//peers := n.h.Peerstore().Peers()
 	//fmt.Printf("peer len: %d %s\n", len(peers), peers)
@@ -81,8 +83,26 @@ func (n *Network) notifyPeerFoundEvent() {
 	}
 }
 
-func setupDiscover(ctx context.Context, h host.Host, dht *dht.IpfsDHT, rendezvous string) {
-	var routingDiscovery = routing.NewRoutingDiscovery(dht)
+func (d *discovery) setupDiscover() {
+	// Start a DHT, for use in peer discovery. We can't just make a new DHT
+	// client because we want each peer to maintain its own local copy of the
+	// DHT, so that the bootstrapping network of the DHT can go down without
+	// inhibiting future peer discovery.
+	kademliaDHT, err := dht.New(ctx, d.h)
+	if err != nil {
+		d.Logger.Error("failed to new dht", "err", err)
+		return
+	}
+
+	// Bootstrap the DHT. In the default configuration, this spawns a Background
+	// thread that will refresh the peer table every five minutes.
+	d.Logger.Debug("Bootstrapping the DHT")
+	if err = kademliaDHT.Bootstrap(ctx); err != nil {
+		d.Logger.Error("failed to bootstrap dht", "err", err)
+		return
+	}
+	var routingDiscovery = routing.NewRoutingDiscovery(kademliaDHT)
+	rendezvous := viper.GetString(flags.P2P_Rendezvous)
 	dutil.Advertise(ctx, routingDiscovery, rendezvous)
 
 	ticker := time.NewTicker(time.Second * 1)
@@ -96,19 +116,23 @@ func setupDiscover(ctx context.Context, h host.Host, dht *dht.IpfsDHT, rendezvou
 
 			peers, err := routingDiscovery.FindPeers(ctx, rendezvous)
 			if err != nil {
-				panic(err)
+				d.Logger.Error("failed to find peers", "err", err)
+				continue
 			}
 
 			for p := range peers {
-				if p.ID == h.ID() {
+				if p.ID == d.h.ID() {
 					continue
 				}
-				if h.Network().Connectedness(p.ID) != network.Connected {
-					_, err = h.Network().DialPeer(ctx, p.ID)
+				d.Logger.Debug("found peer", "peer", p)
+				if d.h.Network().Connectedness(p.ID) != network.Connected {
+					_, err = d.h.Network().DialPeer(ctx, p.ID)
 					if err != nil {
+						d.Logger.Debug("failed to dial peer", "err", err)
 						continue
 					}
 				}
+				peerNotifier <- p
 			}
 		}
 	}
