@@ -82,30 +82,6 @@ func TestBlockByHeight(t *testing.T) {
 	assert.NotNil(t, chain.BlockByHeight(2))
 }
 
-func TestInsertBlocks(t *testing.T) {
-	chain := newBlockChain(t)
-	blocks := []*types.Block{}
-	for i := 0; i < 4; i++ {
-		block := buildBlock(t, chain, types.Txs{}, uint64(i+1))
-		require.NoError(t, chain.ApplyBlock(block))
-		blocks = append(blocks, block)
-	}
-	chain.Close()
-
-	// insert into empty chain
-	chain = newBlockChain(t)
-	assert.NoError(t, chain.InsertBlocks(blocks))
-	chain.Close()
-
-	// insert into non-empty chain
-	chain = newBlockChain(t)
-	for i := 0; i < 5; i++ {
-		advanceBlock(t, chain, types.Txs{}, uint64(i+2))
-	}
-	assert.Equal(t, core.ErrUnknownAncestor, chain.InsertBlocks(blocks[1:]))
-	assert.NoError(t, chain.InsertBlocks(blocks))
-}
-
 func TestApplyHeaderChain(t *testing.T) {
 	chain := newBlockChain(t)
 	blocks := []*types.Block{}

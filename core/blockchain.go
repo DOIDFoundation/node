@@ -245,49 +245,6 @@ func (bc *BlockChain) ApplyBlock(block *types.Block) error {
 	return nil
 }
 
-func (bc *BlockChain) InsertBlocks(blocks []*types.Block) error {
-	if len(blocks) == 0 {
-		return nil
-	}
-
-	// check if we can find first block's parent
-	first := blocks[0]
-	localParent := bc.BlockByHeight(first.Header.Height.Uint64() - 1)
-	if localParent == nil || !bytes.Equal(localParent.Hash(), first.Header.ParentHash) {
-		return ErrUnknownAncestor
-	}
-
-	// check if blocks to import are contiguous
-	var prev *types.Block
-	for _, block := range blocks {
-		if prev != nil && block.Header.Height.Uint64() != prev.Header.Height.Uint64()+1 && !bytes.Equal(block.Header.ParentHash, prev.Hash()) {
-			bc.Logger.Error("Non contiguous block insert", "height", block.Header.Height, "hash", block.Hash(),
-				"parent", block.Header.ParentHash, "prev", prev.Header)
-			return errors.New("blocks not continues")
-		}
-		prev = block
-	}
-
-	bc.mu.Lock()
-	defer bc.mu.Unlock()
-
-	currentTd := new(big.Int)
-	currentTd.Set(bc.latestTD)
-
-	bc.rewindToBlock(localParent)
-
-	for _, block := range blocks {
-		if err := bc.applyBlockAndWrite(block); err != nil {
-			// rollback to first block's parent, maybe we can reapply dropped blocks here to speed up
-			bc.rewindToBlock(localParent)
-			return err
-		}
-	}
-
-	bc.setHead(blocks[len(blocks)-1])
-	return nil
-}
-
 func (bc *BlockChain) rewindToBlock(block *types.Block) {
 	bc.latestBlock = block
 	if err := bc.loadLatestState(); err != nil {
