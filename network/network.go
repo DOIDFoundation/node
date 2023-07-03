@@ -131,7 +131,7 @@ func (n *Network) OnStop() {
 	n.stopSync()
 	n.discovery.Stop()
 	events.ForkDetected.Unsubscribe(n.String())
-	events.NewChainHead.Unsubscribe(n.String())
+	events.NewMinedBlock.Unsubscribe(n.String())
 }
 
 func (n *Network) startSync() {
@@ -176,7 +176,7 @@ func (n *Network) registerEventHandlers() {
 	events.ForkDetected.Subscribe(n.String(), func(data struct{}) {
 		n.startSync()
 	})
-	events.NewChainHead.Subscribe(n.String(), func(data *types.Block) {
+	events.NewMinedBlock.Subscribe(n.String(), func(data *types.Block) {
 		if n.topicBlock == nil {
 			n.Logger.Info("not broadcasting, new block topic not joined")
 			return
