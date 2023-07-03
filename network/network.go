@@ -85,6 +85,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	}
 
 	network.registerEventHandlers()
+	RegisterAPI(network)
 	return network
 }
 
