@@ -35,10 +35,10 @@ func NewDiscovery(logger log.Logger, h host.Host, dht *dual.DHT) *discovery {
 }
 
 func (d *discovery) OnStart() error {
-	// if err := d.mdns.Start(); err != nil {
-	// 	d.Logger.Error("failed to start mdns discovery", "err", err)
-	// 	return err
-	// }
+	if err := d.mdns.Start(); err != nil {
+		d.Logger.Error("failed to start mdns discovery", "err", err)
+		return err
+	}
 
 	go d.setupDiscover()
 	return nil

@@ -162,13 +162,14 @@ func (n *Network) startSync() {
 	// find a best peer with most total difficulty
 	var best *peerState
 	for _, id := range n.host.Peerstore().Peers() {
-		v, err := n.host.Peerstore().Get(id, metaVersion)
+		bz, err := n.host.Peerstore().Get(id, metaVersion)
 		if err != nil {
 			continue
 		}
-		version := v.(peerState)
+		version := new(peerState)
+		version.deserialize(bz.([]byte))
 		if best == nil || version.Td.Cmp(best.Td) > 0 {
-			best = &version
+			best = version
 		}
 	}
 	if best == nil || best.Td.Cmp(n.blockChain.GetTd()) <= 0 {

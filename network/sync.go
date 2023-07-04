@@ -58,13 +58,15 @@ func (s *syncService) doSync() {
 		return
 	}
 	localHeight := s.chain.LatestBlock().Header.Height
-	v, err := s.host.Peerstore().Get(s.id, metaVersion)
+	bz, err := s.host.Peerstore().Get(s.id, metaVersion)
 	if err != nil {
 		s.Logger.Error("failed to get peer version", "err", err)
 		s.dropPeer()
 		return
 	}
-	remoteHeight := v.(peerState).Height
+	v := new(peerState)
+	v.deserialize(bz.([]byte))
+	remoteHeight := v.Height
 	ancestorHeight := uint64(0)
 	// find which block we can start sync from
 	if remoteHeight > localHeight.Uint64() {
