@@ -88,33 +88,26 @@ func (n *Network) notifyPeerFoundEvent() {
 func (d *discovery) setupDiscover() {
 	// Let's connect to the bootstrap nodes first. They will tell us about the
 	// other nodes in the network.
-	BootstrapPeers := dht.GetDefaultBootstrapPeerAddrInfos() // @todo add a flag/config
+	BootstrapPeers := dht.DefaultBootstrapPeers // @todo add a flag/config
 	var wg sync.WaitGroup
 	for _, peerAddr := range BootstrapPeers {
+		peerInfo, err := peer.AddrInfoFromP2pAddr(peerAddr)
+		if err != nil {
+			d.Logger.Error("Failed to parse bootstrap peer", "peer", peerAddr, "err", err)
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := d.h.Connect(ctx, peerAddr); err != nil {
-				d.Logger.Error("Failed to connect", "peer", peerAddr, "err", err)
+			if err := d.h.Connect(ctx, *peerInfo); err != nil {
+				d.Logger.Error("Failed to connect", "peer", *peerInfo, "err", err)
 			} else {
-				d.Logger.Info("Connection established with bootstrap network:", "peer", peerAddr)
+				d.Logger.Info("Connection established with bootstrap network:", "peer", *peerInfo)
 			}
 		}()
 	}
 	wg.Wait()
 
-	// Start a DHT, for use in peer discovery. We can't just make a new DHT
-	// client because we want each peer to maintain its own local copy of the
-	// DHT, so that the bootstrapping network of the DHT can go down without
-	// inhibiting future peer discovery.
-	// kademliaDHT, err := dht.New(ctx, d.h,
-	// 	dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...),
-	// 	// dht.ProtocolPrefix("/doid"),
-	// )
-	// if err != nil {
-	// 	d.Logger.Error("failed to new dht", "err", err)
-	// 	return
-	// }
 	var routingDiscovery = routing.NewRoutingDiscovery(d.dht)
 	if routingDiscovery == nil {
 		d.Logger.Error("failed to create routing discovery")

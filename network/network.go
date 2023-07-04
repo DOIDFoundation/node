@@ -107,7 +107,6 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 			idht, err = dual.New(ctx, h,
 				dual.WanDHTOption(dht.Datastore(dsDht)),
 				dual.DHTOption(dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...)),
-				dual.DHTOption(dht.ProtocolPrefix("/doid")),
 			)
 			return idht, err
 		}),
