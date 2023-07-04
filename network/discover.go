@@ -2,48 +2,50 @@ package network
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
-	dutil "github.com/libp2p/go-libp2p/p2p/discovery/util"
 	"github.com/spf13/viper"
 )
 
 // discovery gets notified when we find a new peer via mDNS discovery
 type discovery struct {
 	service.BaseService
-	h host.Host
-	s mdns.Service
+	h    host.Host
+	dht  *dual.DHT
+	mdns mdns.Service
 }
 
-func NewDiscovery(logger log.Logger, h host.Host) *discovery {
-	d := &discovery{h: h}
+func NewDiscovery(logger log.Logger, h host.Host, dht *dual.DHT) *discovery {
+	d := &discovery{h: h, dht: dht}
 	d.BaseService = *service.NewBaseService(logger.With("service", "discovery"), "Discovery", d)
 	// setup mDNS discovery to find local peers
-	d.s = mdns.NewMdnsService(h, viper.GetString(flags.P2P_Rendezvous), d)
+	d.mdns = mdns.NewMdnsService(h, viper.GetString(flags.P2P_Rendezvous), d)
 	return d
 }
 
 func (d *discovery) OnStart() error {
-	if err := d.s.Start(); err != nil {
-		d.Logger.Error("failed to start mdns discovery", "err", err)
-		return err
-	}
+	// if err := d.mdns.Start(); err != nil {
+	// 	d.Logger.Error("failed to start mdns discovery", "err", err)
+	// 	return err
+	// }
 
 	go d.setupDiscover()
 	return nil
 }
 
 func (d *discovery) OnStop() {
-	if err := d.s.Close(); err != nil {
+	if err := d.mdns.Close(); err != nil {
 		d.Logger.Error("failed to close mdns discovery", "err", err)
 	}
 }
@@ -84,56 +86,77 @@ func (n *Network) notifyPeerFoundEvent() {
 }
 
 func (d *discovery) setupDiscover() {
+	// Let's connect to the bootstrap nodes first. They will tell us about the
+	// other nodes in the network.
+	BootstrapPeers := dht.GetDefaultBootstrapPeerAddrInfos() // @todo add a flag/config
+	var wg sync.WaitGroup
+	for _, peerAddr := range BootstrapPeers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := d.h.Connect(ctx, peerAddr); err != nil {
+				d.Logger.Error("Failed to connect", "peer", peerAddr, "err", err)
+			} else {
+				d.Logger.Info("Connection established with bootstrap network:", "peer", peerAddr)
+			}
+		}()
+	}
+	wg.Wait()
+
 	// Start a DHT, for use in peer discovery. We can't just make a new DHT
 	// client because we want each peer to maintain its own local copy of the
 	// DHT, so that the bootstrapping network of the DHT can go down without
 	// inhibiting future peer discovery.
-	kademliaDHT, err := dht.New(ctx, d.h)
-	if err != nil {
-		d.Logger.Error("failed to new dht", "err", err)
+	// kademliaDHT, err := dht.New(ctx, d.h,
+	// 	dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...),
+	// 	// dht.ProtocolPrefix("/doid"),
+	// )
+	// if err != nil {
+	// 	d.Logger.Error("failed to new dht", "err", err)
+	// 	return
+	// }
+	var routingDiscovery = routing.NewRoutingDiscovery(d.dht)
+	if routingDiscovery == nil {
+		d.Logger.Error("failed to create routing discovery")
 		return
 	}
 
 	// Bootstrap the DHT. In the default configuration, this spawns a Background
 	// thread that will refresh the peer table every five minutes.
 	d.Logger.Debug("Bootstrapping the DHT")
-	if err = kademliaDHT.Bootstrap(ctx); err != nil {
+	if err := d.dht.Bootstrap(ctx); err != nil {
 		d.Logger.Error("failed to bootstrap dht", "err", err)
 		return
 	}
-	var routingDiscovery = routing.NewRoutingDiscovery(kademliaDHT)
+	time.Sleep(time.Millisecond * 100)
 	rendezvous := viper.GetString(flags.P2P_Rendezvous)
-	dutil.Advertise(ctx, routingDiscovery, rendezvous)
+	if _, err := routingDiscovery.Advertise(ctx, rendezvous); err != nil {
+		d.Logger.Error("failed to routing advertise: ", "err", err)
+		return
+	}
 
-	ticker := time.NewTicker(time.Second * 1)
-	defer ticker.Stop()
-
+	peers, err := routingDiscovery.FindPeers(ctx, rendezvous)
+	if err != nil {
+		d.Logger.Error("failed to find peers", "err", err)
+		return
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-
-			peers, err := routingDiscovery.FindPeers(ctx, rendezvous)
-			if err != nil {
-				d.Logger.Error("failed to find peers", "err", err)
+		case p := <-peers:
+			if p.ID == d.h.ID() || len(p.Addrs) == 0 {
 				continue
 			}
-
-			for p := range peers {
-				if p.ID == d.h.ID() || len(p.Addrs) == 0 {
+			d.Logger.Debug("found peer", "peer", p)
+			if d.h.Network().Connectedness(p.ID) != network.Connected {
+				_, err = d.h.Network().DialPeer(ctx, p.ID)
+				if err != nil {
+					d.Logger.Debug("failed to dial peer", "err", err)
 					continue
 				}
-				d.Logger.Debug("found peer", "peer", p)
-				if d.h.Network().Connectedness(p.ID) != network.Connected {
-					_, err = d.h.Network().DialPeer(ctx, p.ID)
-					if err != nil {
-						d.Logger.Debug("failed to dial peer", "err", err)
-						continue
-					}
-				}
-				peerNotifier <- p
 			}
+			peerNotifier <- p
 		}
 	}
 }

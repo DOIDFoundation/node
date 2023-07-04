@@ -2,11 +2,9 @@ package network
 
 import (
 	"context"
-	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
-	"sync"
 	"sync/atomic"
 
 	"github.com/DOIDFoundation/node/core"
@@ -17,8 +15,11 @@ import (
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
 	"github.com/ethereum/go-ethereum/rlp"
+	dsbadger "github.com/ipfs/go-ds-badger"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p-kad-dht/dual"
+	"github.com/libp2p/go-libp2p-peerstore/pstoreds"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -70,17 +71,44 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 		return nil
 	}
 
-	// var idht *dht.IpfsDHT
+	dso := dsbadger.DefaultOptions
+
+	dataDir := filepath.Join(viper.GetString(flags.Home), "data")
+	ds, err := dsbadger.NewDatastore(filepath.Join(dataDir, "libp2p-peerstore-v0"), &dso)
+	if err != nil {
+		network.Logger.Error("Failed to create peerstore", "err", err, "path", filepath.Join(dataDir, "libp2p-peerstore-v0"))
+		return nil
+	}
+
+	ps, err := pstoreds.NewPeerstore(ctx, ds, pstoreds.DefaultOpts())
+	if err != nil {
+		network.Logger.Error("Failed to create peerstore", "err", err)
+		return nil
+	}
+
+	dsoDht := dsbadger.DefaultOptions
+	dsDht, err := dsbadger.NewDatastore(filepath.Join(dataDir, "libp2p-dht-v0"), &dsoDht)
+	if err != nil {
+		network.Logger.Error("Failed to create dht store", "err", err, "path", filepath.Join(dataDir, "libp2p-dht-v0"))
+		return nil
+	}
+
+	var idht *dual.DHT
 	network.host, err = libp2p.New(
 		libp2p.Identity(network.loadPrivateKey()),
 		libp2p.ListenAddrs(addr),
 		libp2p.UserAgent(version.VersionWithCommit()),
 		libp2p.Security(noise.ID, noise.New),
+		libp2p.Peerstore(ps),
 		// Attempt to open ports using uPNP for NATed hosts.
 		libp2p.NATPortMap(),
 		// Let this host use the DHT to find other hosts
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
-			idht, err := dht.New(ctx, h)
+			idht, err = dual.New(ctx, h,
+				dual.WanDHTOption(dht.Datastore(dsDht)),
+				dual.DHTOption(dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...)),
+				dual.DHTOption(dht.ProtocolPrefix("/doid")),
+			)
 			return idht, err
 		}),
 	)
@@ -90,7 +118,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	}
 	network.Logger.Info("Host created.", "id", network.host.ID(), "addrs", network.host.Addrs())
 
-	network.discovery = NewDiscovery(logger, network.host)
+	network.discovery = NewDiscovery(logger, network.host, idht)
 	if network.discovery == nil {
 		network.Logger.Error("Failed to create discovery service")
 		return nil
@@ -109,21 +137,15 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 
 // OnStart starts the Network. It implements service.Service.
 func (n *Network) OnStart() error {
-	localHost := n.host
-
 	// Set a function as stream handler. This function is called when a peer
 	// initiates a connection and starts a stream with this peer.
-	localHost.SetStreamHandler(protocol.ID(ProtocolID), n.handleStream)
+	n.host.SetStreamHandler(protocol.ID(ProtocolID), n.handleStream)
+	n.host.SetStreamHandler(protocol.ID(ProtocolGetBlock), n.getBlockHandler)
 
-	//_ = viper.GetString(node.config.BootstrapPeers)
-	if len(n.config.BootstrapPeers) == 0 {
-		n.config.BootstrapPeers = dht.DefaultBootstrapPeers
-	}
+	go n.notifyPeerFoundEvent()
+	go n.registerBlockSubscribers()
 
 	n.discovery.Start()
-
-	go n.Bootstrap(localHost)
-	localHost.SetStreamHandler(protocol.ID(ProtocolGetBlock), n.getBlockHandler)
 
 	return nil
 }
@@ -194,36 +216,6 @@ func (n *Network) registerEventHandlers() {
 	})
 }
 
-func (n *Network) Bootstrap(newNode host.Host) {
-	// Let's connect to the bootstrap nodes first. They will tell us about the
-	// other nodes in the network.
-	var wg sync.WaitGroup
-	for _, peerAddr := range n.config.BootstrapPeers {
-		peerinfo2, _ := peer.AddrInfoFromP2pAddr(peerAddr)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := newNode.Connect(ctx, *peerinfo2); err != nil {
-				n.Logger.Error("Failed to connect", "peer", *peerinfo2, "err", err)
-			} else {
-				n.Logger.Info("Connection established with bootstrap network:", "peer", *peerinfo2)
-			}
-		}()
-	}
-	wg.Wait()
-
-	//service := NewService(newNode, protocol.ID(ProtocolID), n.blockChain, n.Logger)
-	//err := service.SetupRPC()
-	//if err != nil {
-	//	n.Logger.Error("new RPC service", "err", err)
-	//}
-
-	//n.rpcService = service
-
-	go n.notifyPeerFoundEvent()
-	go n.registerBlockSubscribers()
-}
-
 func (n *Network) loadPrivateKey() crypto.PrivKey {
 	// try base64 key flag
 	if viper.IsSet(flags.P2P_Key) {
@@ -246,7 +238,7 @@ func (n *Network) loadPrivateKey() crypto.PrivKey {
 			logger.Error("Failed to parse p2p key file", "err", err)
 			panic(err)
 		}
-	} else if errors.Is(err, os.ErrNotExist) && viper.GetString(flags.P2P_KeyFile) == "p2p.key" {
+	} else if os.IsNotExist(err) && viper.GetString(flags.P2P_KeyFile) == "p2p.key" {
 		priv, _, err = crypto.GenerateKeyPair(
 			crypto.Ed25519, // Select your key type. Ed25519 are nice short
 			-1,             // Select key length when possible (i.e. RSA).

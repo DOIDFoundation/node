@@ -1,11 +1,13 @@
 package network
 
-var (
-	RendezvousString = "meetme"
+const (
 	ProtocolID       = "/doid/network/1"
 	ProtocolGetBlock = "/doid/block/get/1"
-	ListenHost       = "0.0.0.0"
-	ListenPort       = "3001"
+)
+
+var (
+	ListenHost = "0.0.0.0"
+	ListenPort = "3001"
 )
 
 const prefixCMDLength = 12
