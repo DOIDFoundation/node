@@ -13,6 +13,8 @@ const (
 
 	P2P_Addr       = "p2p.addr"
 	P2P_Rendezvous = "p2p.rendezvous"
+	P2P_Key        = "p2p.key"
+	P2P_KeyFile    = "p2p.keyfile"
 
 	RPC_Addr = "rpc.addr"
 )

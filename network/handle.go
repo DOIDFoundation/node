@@ -20,14 +20,14 @@ func (n *Network) handleStream(stream network.Stream) {
 	n.Logger.Debug("cmd", "data", len(data), "content", len(content))
 	switch command(cmd) {
 	case cVersion:
-		go n.handleVersion(content)
+		go n.handlePeerState(content)
 	case cMyError:
 		go n.handleMyError(content)
 	}
 }
 
-func (n *Network) handleVersion(content []byte) {
-	v := version{}
+func (n *Network) handlePeerState(content []byte) {
+	v := peerState{}
 	v.deserialize(content)
 	n.Logger.Debug("handle version", "version", v)
 	id := peerIDFromString(v.ID)

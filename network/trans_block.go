@@ -42,7 +42,7 @@ func (n *Network) registerBlockSubscribers() {
 		}
 		logger.Debug("got message blocks", "height", blockEvent.Block.Header.Height, "td", blockEvent.Td, "peer", msg.GetFrom())
 		n.host.Peerstore().Put(msg.GetFrom(), metaVersion,
-			version{Height: blockEvent.Block.Header.Height.Uint64(),
+			peerState{Height: blockEvent.Block.Header.Height.Uint64(),
 				Td: blockEvent.Td,
 				ID: msg.GetFrom().String()})
 

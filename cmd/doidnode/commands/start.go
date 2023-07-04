@@ -17,6 +17,8 @@ func init() {
 	StartCmd.Flags().String(flags.RPC_Addr, "127.0.0.1:26657", "RPC listen address")
 	StartCmd.Flags().String(flags.P2P_Addr, "/ip4/127.0.0.1/tcp/26667", "Libp2p listen address")
 	StartCmd.Flags().StringP(flags.P2P_Rendezvous, "r", "doidnode", "Libp2p rendezvous string used for peer discovery")
+	StartCmd.Flags().String(flags.P2P_Key, "", "Private key to generate libp2p peer identity")
+	StartCmd.Flags().String(flags.P2P_KeyFile, "p2p.key", "Private key file to generate libp2p peer identity")
 }
 
 // StartCmd is the command that allows the CLI to start a node.
