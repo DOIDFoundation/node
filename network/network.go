@@ -117,15 +117,15 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	}
 	network.Logger.Info("Host created.", "id", network.host.ID(), "addrs", network.host.Addrs())
 
-	network.discovery = NewDiscovery(logger, network.host, idht)
-	if network.discovery == nil {
-		network.Logger.Error("Failed to create discovery service")
-		return nil
-	}
-
 	network.pubsub, err = pubsub.NewGossipSub(ctx, network.host)
 	if err != nil {
 		network.Logger.Error("Failed to create pubsub", "err", err)
+		return nil
+	}
+
+	network.discovery = newDiscovery(logger, chain, network.host, idht, network.pubsub)
+	if network.discovery == nil {
+		network.Logger.Error("Failed to create discovery service")
 		return nil
 	}
 
@@ -155,8 +155,7 @@ func (n *Network) OnStop() {
 	n.stopSync()
 	n.discovery.Stop()
 	n.host.Close()
-	events.ForkDetected.Unsubscribe(n.String())
-	events.NewMinedBlock.Unsubscribe(n.String())
+	n.unregisterEventHandlers()
 }
 
 func (n *Network) startSync() {
@@ -195,7 +194,31 @@ func (n *Network) stopSync() {
 	n.sync = nil
 }
 
+func (n *Network) unregisterEventHandlers() {
+	eventPeerState.Unsubscribe(n.String())
+	events.ForkDetected.Unsubscribe(n.String())
+	events.NewMinedBlock.Unsubscribe(n.String())
+}
+
 func (n *Network) registerEventHandlers() {
+	eventPeerState.Subscribe(n.String(), func(peer peer.ID) {
+		peerState := getPeerState(n.host.Peerstore(), peer)
+		if peerState != nil {
+			switch peerState.Td.Cmp(n.blockChain.GetTd()) {
+			case -1: // we are high
+				stream, err := n.host.NewStream(ctx, peer, protocol.ID(ProtocolState))
+				if err != nil {
+					n.Logger.Debug("failed to create stream", "err", err, "peer", peer)
+					break
+				}
+				stream.CloseRead()
+				n.stateHandler(stream)
+			case 0:
+			case 1: // network is high
+				n.startSync()
+			}
+		}
+	})
 	events.ForkDetected.Subscribe(n.String(), func(data struct{}) {
 		n.startSync()
 	})
@@ -209,7 +232,6 @@ func (n *Network) registerEventHandlers() {
 			n.Logger.Error("failed to encode block for broadcasting", "err", err)
 			return
 		}
-		n.Logger.Debug("topic peers", "peers", n.topicBlock.ListPeers())
 		n.topicBlock.Publish(ctx, b)
 	})
 }

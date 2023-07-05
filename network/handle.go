@@ -19,27 +19,9 @@ func (n *Network) handleStream(stream network.Stream) {
 	cmd, content := splitMessage(data)
 	n.Logger.Debug("cmd", "data", len(data), "content", len(content), "from", stream.Conn().RemotePeer())
 	switch command(cmd) {
-	case cVersion:
-		go n.handlePeerState(content)
 	case cMyError:
 		go n.handleMyError(content)
 	}
-}
-
-func (n *Network) handlePeerState(content []byte) {
-	v := peerState{}
-	v.deserialize(content)
-	n.Logger.Debug("handle version", "peerState", v)
-	id := peerIDFromString(v.ID)
-	if err := n.host.Peerstore().Put(id, metaVersion, v.serialize()); err != nil {
-		n.Logger.Error("failed to update peer state", "err", err)
-	}
-	td := n.blockChain.GetTd()
-	if td.Cmp(v.Td) < 0 {
-		n.Logger.Info("we are behind, start sync", "ourHeight", n.blockChain.LatestBlock().Header.Height, "ourTD", td, "networkHeight", v.Height, "networkTD", v.Td)
-		n.startSync()
-	}
-	peerNotifier <- n.host.Peerstore().PeerInfo(peerIDFromString(v.ID))
 }
 
 func (n *Network) handleMyError(content []byte) {

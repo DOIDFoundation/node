@@ -2,7 +2,6 @@ package network
 
 import (
 	"math/big"
-	"time"
 
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -10,36 +9,14 @@ import (
 	"github.com/libp2p/go-libp2p/core/peerstore"
 )
 
-type peerState struct {
-	//Version  byte
-	Height uint64
-	Td     *big.Int
-	ID     string
-}
-
-func (v peerState) serialize() []byte {
-	bz, err := rlp.EncodeToBytes(v)
-	if err != nil {
-		panic(err)
-	}
-	return bz
-}
-
-func (v *peerState) deserialize(d []byte) {
-	err := rlp.DecodeBytes(d, v)
-	if err != nil {
-		panic(err)
-	}
-}
-
 type state struct {
 	Height uint64
 	Td     *big.Int
 }
 
-const (
-	timeoutState = time.Second * 60
-)
+func newState() *state {
+	return &state{0, new(big.Int)}
+}
 
 func readState(stream network.Stream, peerState *state) error {
 	if err := rlp.Decode(stream, peerState); err != nil {
@@ -72,24 +49,15 @@ func getPeerState(s peerstore.Peerstore, id peer.ID) *state {
 	return peerState
 }
 
-func (n *Network) updatePeerState(peer peer.ID, peerState *state) {
-	n.Logger.Info("update peer state", "state", peerState, "peer", peer)
-	bz, err := rlp.EncodeToBytes(peerState)
-	if err == nil {
-		err = n.host.Peerstore().Put(peer, metaState, bz)
+func updatePeerState(peerStore peerstore.Peerstore, peer peer.ID, peerState *state) (updated bool, err error) {
+	if oldState := getPeerState(peerStore, peer); oldState != nil && oldState.Td.Cmp(peerState.Td) == 0 {
+		return false, nil
+	} else if bz, err := rlp.EncodeToBytes(peerState); err != nil {
+		return false, err
+	} else if err = peerStore.Put(peer, metaState, bz); err != nil {
+		return false, err
 	}
-	if err != nil {
-		n.Logger.Error("failed to update peer state", "err", err, "peer", peer)
-	}
-}
-
-func (n *Network) updatePeerStateAndSync(peer peer.ID, peerState *state) {
-	n.updatePeerState(peer, peerState)
-	td := n.blockChain.GetTd()
-	if td.Cmp(peerState.Td) < 0 {
-		n.Logger.Info("we are behind, start sync", "ourHeight", n.blockChain.LatestBlock().Header.Height, "ourTD", td, "networkHeight", peerState.Height, "networkTD", peerState.Td)
-		n.startSync()
-	}
+	return true, nil
 }
 
 func (n *Network) stateHandler(s network.Stream) {
@@ -104,11 +72,18 @@ func (n *Network) stateHandler(s network.Stream) {
 		logger.Debug("failed to send peer state", "err", err, "state", peerState)
 	}
 
-	peerState = &state{0, new(big.Int)}
+	peerState = newState()
 	if err := readState(s, peerState); err != nil {
 		logger.Debug("failed to read peer state", "err", err)
 		s.Reset()
 		return
 	}
-	n.updatePeerStateAndSync(s.Conn().RemotePeer(), peerState)
+
+	peer := s.Conn().RemotePeer()
+	if updated, err := updatePeerState(n.host.Peerstore(), peer, peerState); updated == true {
+		logger.Debug("peer state updated", "peer", peer, "state", peerState)
+		eventPeerState.Send(peer)
+	} else if err != nil {
+		logger.Error("failed to update peer state", "peer", peer, "err", err)
+	}
 }

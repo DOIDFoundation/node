@@ -1,14 +1,18 @@
 package network
 
 import (
+	"math/big"
 	"sync"
 	"time"
 
+	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
+	"github.com/ethereum/go-ethereum/rlp"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -20,13 +24,16 @@ import (
 // discovery gets notified when we find a new peer via mDNS discovery
 type discovery struct {
 	service.BaseService
-	h    host.Host
-	dht  *dual.DHT
+	chain  *core.BlockChain
+	host   host.Host
+	pubsub *pubsub.PubSub
+	dht    *dual.DHT
+
 	mdns mdns.Service
 }
 
-func NewDiscovery(logger log.Logger, h host.Host, dht *dual.DHT) *discovery {
-	d := &discovery{h: h, dht: dht}
+func newDiscovery(logger log.Logger, chain *core.BlockChain, h host.Host, dht *dual.DHT, pubsub *pubsub.PubSub) *discovery {
+	d := &discovery{chain: chain, host: h, pubsub: pubsub, dht: dht}
 	d.BaseService = *service.NewBaseService(logger.With("module", "network", "service", "discovery"), "Discovery", d)
 	// setup mDNS discovery to find local peers
 	d.mdns = mdns.NewMdnsService(h, viper.GetString(flags.P2P_Rendezvous), d)
@@ -44,11 +51,61 @@ func (d *discovery) OnStop() {
 	}
 }
 
+func (d *discovery) pubsubDiscover() {
+	logger := d.Logger.With("topic", TopicPeer)
+	topic, err := d.pubsub.Join(TopicPeer)
+	if err != nil {
+		logger.Error("Failed to join pubsub topic", "err", err)
+		return
+	}
+	logger.Debug("pubsub topic joined")
+
+	peerFound := func(msg *pubsub.Message) {
+		data := msg.GetData()
+		peerState := newState()
+		if err := rlp.DecodeBytes(data, peerState); err != nil {
+			logger.Error("failed to decode peer state", "err", err)
+			return
+		}
+		peer := msg.GetFrom()
+		if updated, err := updatePeerState(d.host.Peerstore(), peer, peerState); updated == true {
+			logger.Debug("pubsub found peer", "peer", peer, "state", peerState)
+			eventPeerState.Send(peer)
+		} else if err != nil {
+			logger.Error("failed to update peer state", "peer", peer, "err", err)
+		}
+	}
+
+	go pubsubMessageLoop(ctx, topic, d.host.ID(), peerFound, logger)
+
+	ticker := time.NewTicker(time.Second * 15)
+	defer ticker.Stop()
+
+	for {
+		if len(topic.ListPeers()) != 0 {
+			logger.Debug("no peers in topic, wait")
+		} else if bz, err := rlp.EncodeToBytes(&state{Height: d.chain.LatestBlock().Header.Height.Uint64(), Td: new(big.Int).Set(d.chain.GetTd())}); err != nil {
+			logger.Error("failed to encode peer state", "err", err)
+		} else if err = topic.Publish(ctx, bz); err != nil {
+			logger.Error("failed to publish peer state", "err", err)
+		} else {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			continue
+		}
+	}
+}
+
 // HandlePeerFound connects to peers discovered via mDNS. Once they're connected,
 // the PubSub system will automatically start interacting with them if they also
 // support PubSub.
 func (d *discovery) HandlePeerFound(pi peer.AddrInfo) {
-	if pi.ID.String() == d.h.ID().String() {
+	if pi.ID.String() == d.host.ID().String() {
 		return
 	}
 	d.Logger.Debug("mdns found peer", "peer", pi)
@@ -83,7 +140,7 @@ func (d *discovery) setupDiscover() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := d.h.Connect(ctx, *peerInfo); err != nil {
+			if err := d.host.Connect(ctx, *peerInfo); err != nil {
 				d.Logger.Error("Failed to connect", "peer", *peerInfo, "err", err)
 			} else {
 				d.Logger.Info("Connection established with bootstrap network:", "peer", *peerInfo)
@@ -95,6 +152,8 @@ func (d *discovery) setupDiscover() {
 	if err := d.mdns.Start(); err != nil {
 		d.Logger.Error("failed to start mdns discovery", "err", err)
 	}
+
+	go d.pubsubDiscover()
 
 	// Bootstrap the DHT. In the default configuration, this spawns a Background
 	// thread that will refresh the peer table every five minutes.
@@ -110,27 +169,31 @@ func (d *discovery) setupDiscover() {
 		d.Logger.Error("failed to create routing discovery")
 		return
 	}
-	rendezvous := viper.GetString(flags.P2P_Rendezvous)
-	if _, err := routingDiscovery.Advertise(ctx, rendezvous); err != nil {
-		d.Logger.Error("failed to routing advertise: ", "err", err)
-		return
-	}
 
-	peers, err := routingDiscovery.FindPeers(ctx, rendezvous)
-	if err != nil {
-		d.Logger.Error("failed to find peers", "err", err)
-		return
-	}
+	ticker := time.NewTicker(time.Second * 15)
+	defer ticker.Stop()
+
+	rendezvous := viper.GetString(flags.P2P_Rendezvous)
 	for {
+		if _, err := routingDiscovery.Advertise(ctx, rendezvous); err != nil {
+			d.Logger.Error("failed to routing advertise: ", "err", err)
+		} else if peers, err := routingDiscovery.FindPeers(ctx, rendezvous); err != nil {
+			d.Logger.Error("failed to find peers", "err", err)
+		} else {
+			for p := range peers {
+				if p.ID == d.host.ID() || len(p.Addrs) == 0 {
+					continue
+				}
+				d.Logger.Debug("dht found peer", "peer", p)
+				peerNotifier <- p
+			}
+		}
+
 		select {
 		case <-ctx.Done():
 			return
-		case p := <-peers:
-			if p.ID == d.h.ID() || len(p.Addrs) == 0 {
-				continue
-			}
-			d.Logger.Debug("dht found peer", "peer", p)
-			peerNotifier <- p
+		case <-ticker.C:
+			continue
 		}
 	}
 }
