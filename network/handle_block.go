@@ -3,7 +3,9 @@ package network
 import (
 	"bytes"
 	"encoding/gob"
+	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"time"
 
@@ -45,9 +47,9 @@ const (
 	timeoutGetBlock = time.Second * 60
 )
 
-func (n *Network) getBlockHandler(s network.Stream) {
-	logger := n.Logger.With("action", "get block", "peer", s.Conn().RemotePeer())
-	logger.Debug("peer connected")
+func (n *Network) getBlocksHandler(s network.Stream) {
+	logger := n.Logger.With("protocol", "getblocks", "peer", s.Conn().RemotePeer())
+	logger.Debug("stream established")
 
 	errCh := make(chan error, 1)
 	defer close(errCh)
@@ -60,7 +62,11 @@ func (n *Network) getBlockHandler(s network.Stream) {
 			logger.Debug("get timeout")
 		case err, ok := <-errCh:
 			if ok {
-				logger.Error("failed", "err", err)
+				if errors.Is(err, io.EOF) {
+					logger.Debug("got eof")
+				} else {
+					logger.Error("failed", "err", err)
+				}
 			} else {
 				logger.Error("failed without error")
 			}

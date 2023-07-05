@@ -1,8 +1,9 @@
 package network
 
 const (
-	ProtocolID       = "/doid/network/1"
-	ProtocolGetBlock = "/doid/block/get/1"
+	ProtocolID        = "/doid/network/1"
+	ProtocolGetBlocks = "/doid/block/get/1"
+	ProtocolState     = "/doid/state/1"
 )
 
 var (
@@ -26,4 +27,5 @@ const (
 
 const (
 	metaVersion = "v"
+	metaState   = "s"
 )

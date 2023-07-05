@@ -27,7 +27,7 @@ type syncService struct {
 
 func newSyncService(logger log.Logger, id peer.ID, h host.Host, chain *core.BlockChain) *syncService {
 	s := &syncService{id: id, host: h, chain: chain, hc: chain.NewHeaderChain()}
-	s.BaseService = *service.NewBaseService(logger.With("service", "sync", "peer", id), "Sync", s)
+	s.BaseService = *service.NewBaseService(logger.With("module", "network", "service", "sync", "peer", id), "Sync", s)
 	return s
 }
 
@@ -51,21 +51,20 @@ func (s *syncService) sync() {
 }
 
 func (s *syncService) doSync() {
-	stream, err := s.host.NewStream(ctx, s.id, protocol.ID(ProtocolGetBlock))
+	stream, err := s.host.NewStream(ctx, s.id, protocol.ID(ProtocolGetBlocks))
 	if err != nil {
 		s.Logger.Error("failed to create stream", "err", err)
 		s.dropPeer()
 		return
 	}
+	defer stream.Close()
 	localHeight := s.chain.LatestBlock().Header.Height
-	bz, err := s.host.Peerstore().Get(s.id, metaVersion)
-	if err != nil {
-		s.Logger.Error("failed to get peer version", "err", err)
+	v := getPeerState(s.host.Peerstore(), s.id)
+	if v == nil {
+		s.Logger.Error("failed to get peer version")
 		s.dropPeer()
 		return
 	}
-	v := new(peerState)
-	v.deserialize(bz.([]byte))
 	remoteHeight := v.Height
 	ancestorHeight := uint64(0)
 	// find which block we can start sync from

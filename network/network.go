@@ -139,7 +139,8 @@ func (n *Network) OnStart() error {
 	// Set a function as stream handler. This function is called when a peer
 	// initiates a connection and starts a stream with this peer.
 	n.host.SetStreamHandler(protocol.ID(ProtocolID), n.handleStream)
-	n.host.SetStreamHandler(protocol.ID(ProtocolGetBlock), n.getBlockHandler)
+	n.host.SetStreamHandler(protocol.ID(ProtocolGetBlocks), n.getBlocksHandler)
+	n.host.SetStreamHandler(protocol.ID(ProtocolState), n.stateHandler)
 
 	go n.notifyPeerFoundEvent()
 	go n.registerBlockSubscribers()
@@ -160,16 +161,13 @@ func (n *Network) OnStop() {
 
 func (n *Network) startSync() {
 	// find a best peer with most total difficulty
-	var best *peerState
+	var best *state
+	var bestId peer.ID
 	for _, id := range n.host.Peerstore().Peers() {
-		bz, err := n.host.Peerstore().Get(id, metaVersion)
-		if err != nil {
-			continue
-		}
-		version := new(peerState)
-		version.deserialize(bz.([]byte))
-		if best == nil || version.Td.Cmp(best.Td) > 0 {
-			best = version
+		peerState := getPeerState(n.host.Peerstore(), id)
+		if best == nil || (peerState != nil && peerState.Td.Cmp(best.Td) > 0) {
+			best = peerState
+			bestId = id
 		}
 	}
 	if best == nil || best.Td.Cmp(n.blockChain.GetTd()) <= 0 {
@@ -183,7 +181,7 @@ func (n *Network) startSync() {
 	n.Logger.Info("start syncing")
 	events.SyncStarted.Send(struct{}{})
 	events.SyncFinished.Subscribe(n.String(), func(data struct{}) { n.stopSync() })
-	n.sync = newSyncService(n.Logger, peerIDFromString(best.ID), n.host, n.blockChain)
+	n.sync = newSyncService(n.Logger, bestId, n.host, n.blockChain)
 	n.sync.Start()
 }
 

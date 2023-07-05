@@ -1,7 +1,6 @@
 package network
 
 import (
-	"context"
 	"sync"
 	"time"
 
@@ -11,8 +10,8 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/spf13/viper"
@@ -28,18 +27,13 @@ type discovery struct {
 
 func NewDiscovery(logger log.Logger, h host.Host, dht *dual.DHT) *discovery {
 	d := &discovery{h: h, dht: dht}
-	d.BaseService = *service.NewBaseService(logger.With("service", "discovery"), "Discovery", d)
+	d.BaseService = *service.NewBaseService(logger.With("module", "network", "service", "discovery"), "Discovery", d)
 	// setup mDNS discovery to find local peers
 	d.mdns = mdns.NewMdnsService(h, viper.GetString(flags.P2P_Rendezvous), d)
 	return d
 }
 
 func (d *discovery) OnStart() error {
-	if err := d.mdns.Start(); err != nil {
-		d.Logger.Error("failed to start mdns discovery", "err", err)
-		return err
-	}
-
 	go d.setupDiscover()
 	return nil
 }
@@ -57,16 +51,7 @@ func (d *discovery) HandlePeerFound(pi peer.AddrInfo) {
 	if pi.ID.String() == d.h.ID().String() {
 		return
 	}
-	d.Logger.Debug("discovered new peer", "peer", pi)
-	err := d.h.Connect(context.Background(), pi)
-	if err != nil {
-		d.Logger.Debug("error connecting to peer", "peer", pi, "err", err)
-		return
-	}
-	d.Logger.Debug("connected to peer", "peer", pi)
-
-	//peers := n.h.Peerstore().Peers()
-	//fmt.Printf("peer len: %d %s\n", len(peers), peers)
+	d.Logger.Debug("mdns found peer", "peer", pi)
 	peerNotifier <- pi
 }
 
@@ -74,14 +59,13 @@ func (n *Network) notifyPeerFoundEvent() {
 	for {
 		pi := <-peerNotifier
 
-		n.peerPool[pi.ID.String()] = pi
-
-		gv := peerState{Height: n.blockChain.LatestBlock().Header.Height.Uint64(),
-			Td: n.blockChain.GetTd(),
-			ID: n.host.ID().String()}
-		data := jointMessage(cVersion, gv.serialize())
-
-		n.SendMessage(pi, data)
+		stream, err := n.host.NewStream(ctx, pi.ID, protocol.ID(ProtocolState))
+		if err != nil {
+			n.Logger.Debug("failed to create stream", "err", err, "peer", pi)
+			continue
+		}
+		n.stateHandler(stream)
+		stream.Close()
 	}
 }
 
@@ -108,10 +92,8 @@ func (d *discovery) setupDiscover() {
 	}
 	wg.Wait()
 
-	var routingDiscovery = routing.NewRoutingDiscovery(d.dht)
-	if routingDiscovery == nil {
-		d.Logger.Error("failed to create routing discovery")
-		return
+	if err := d.mdns.Start(); err != nil {
+		d.Logger.Error("failed to start mdns discovery", "err", err)
 	}
 
 	// Bootstrap the DHT. In the default configuration, this spawns a Background
@@ -122,6 +104,12 @@ func (d *discovery) setupDiscover() {
 		return
 	}
 	time.Sleep(time.Millisecond * 100)
+
+	var routingDiscovery = routing.NewRoutingDiscovery(d.dht)
+	if routingDiscovery == nil {
+		d.Logger.Error("failed to create routing discovery")
+		return
+	}
 	rendezvous := viper.GetString(flags.P2P_Rendezvous)
 	if _, err := routingDiscovery.Advertise(ctx, rendezvous); err != nil {
 		d.Logger.Error("failed to routing advertise: ", "err", err)
@@ -141,14 +129,7 @@ func (d *discovery) setupDiscover() {
 			if p.ID == d.h.ID() || len(p.Addrs) == 0 {
 				continue
 			}
-			d.Logger.Debug("found peer", "peer", p)
-			if d.h.Network().Connectedness(p.ID) != network.Connected {
-				_, err = d.h.Network().DialPeer(ctx, p.ID)
-				if err != nil {
-					d.Logger.Debug("failed to dial peer", "err", err)
-					continue
-				}
-			}
+			d.Logger.Debug("dht found peer", "peer", p)
 			peerNotifier <- p
 		}
 	}
