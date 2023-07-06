@@ -7,6 +7,27 @@ LD_FLAGS = -X github.com/DOIDFoundation/node/version.Commit=$(COMMIT_HASH) \
 		-X github.com/DOIDFoundation/node/version.Date=$(COMMIT_DATE)
 BUILD_FLAGS = -mod=readonly -ldflags "$(LD_FLAGS)"
 
+# for cross compiling, TARGETOS and TARGETARCH can be set by docker
+# GOOS and GOARCH values can be found by command: go tool dist list
+TARGETOS ?=
+TARGETARCH ?=
+GOOS ?= $(TARGETOS)
+GOARCH ?= $(TARGETARCH)
+
+ifneq ($(strip $(GOOS)),)
+	GO_BUILD_ENV=GOOS=$(GOOS)
+	BUILDDIR:=$(BUILDDIR)/$(GOOS)
+endif
+
+ifneq ($(strip $(GOARCH)),)
+	GO_BUILD_ENV+=GOARCH=$(GOARCH)
+	ifneq ($(strip $(GOOS)),)
+		BUILDDIR:=$(BUILDDIR)-$(GOARCH)
+	else
+		BUILDDIR:=$(BUILDDIR)/$(GOARCH)
+	endif
+endif
+
 all: build test
 .PHONY: all
 
@@ -21,7 +42,7 @@ build: $(BUILD_TARGETS)
 .PHONY: build
 
 doidnode:
-	cd ./cmd/$@ && go build -mod=readonly $(BUILD_FLAGS) -o $(BUILDDIR)/ ./...
+	cd ./cmd/$@ && $(GO_BUILD_ENV) go build $(BUILD_FLAGS) -o $(BUILDDIR)/ ./...
 .PHONY: doidnode
 
 test:
