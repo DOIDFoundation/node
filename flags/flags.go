@@ -16,5 +16,9 @@ const (
 	P2P_Key        = "p2p.key"
 	P2P_KeyFile    = "p2p.keyfile"
 
-	RPC_Addr = "rpc.addr"
+	RPC_Http      = "rpc.http.enabled"
+	RPC_HttpAddr  = "rpc.http.addr"
+	RPC_Ws        = "rpc.ws.enabled"
+	RPC_WsAddr    = "rpc.ws.addr"
+	RPC_WsOrigins = "rpc.ws.origins"
 )
