@@ -9,6 +9,7 @@ import (
 	cmtflags "github.com/cometbft/cometbft/libs/cli/flags"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -70,6 +71,12 @@ func RootCmdExecutor() cli.Executable {
 
 		logger, err = cmtflags.ParseLogLevel(viper.GetString(flags.Log_Level), logger.With("module", "main"), cmd.Flag(flags.Log_Level).DefValue)
 		return err
+	}
+	cmd, _, err := RootCmd.Find(os.Args[1:])
+	// execute start cmd if no cmd is given
+	if err == nil && cmd.Use == RootCmd.Use && cmd.Flags().Parse(os.Args[1:]) != pflag.ErrHelp {
+		args := append([]string{StartCmd.Use}, os.Args[1:]...)
+		RootCmd.SetArgs(args)
 	}
 	return executor
 }
