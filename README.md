@@ -1,9 +1,36 @@
 # DOID Network Node
 
-## Start
+## Quick Start
+* Make a folder for DOID node
+* Download and extract available executable files from [releases](https://github.com/DOIDFoundation/node/releases) page
+* Download sample config file from [releases](https://github.com/DOIDFoundation/node/releases) page
+* Put them in the folder just made
+* Execute the doidnode binary
+
+## Start From code
 
 ```
+git clone https://github.com/DOIDFoundation/node
+cd node
 go run ./cmd/doidnode start --home /tmp/doid-node-home
+```
+
+### Flags
+```
+go run ./cmd/doidnode start --help
+```
+Current available flags:
+```
+Flags:
+      --db.engine string        Backing database implementation to use ('memdb' or 'goleveldb') (default "goleveldb")
+  -h, --help                    help for start
+  -m, --mine.enabled            Enable mining
+      --mine.threads uint       Number of threads to start mining, 0 indicates number of logical CPUs
+      --p2p.addr string         Libp2p listen address (default "/ip4/127.0.0.1/tcp/26667")
+      --p2p.key string          Private key to generate libp2p peer identity
+      --p2p.keyfile string      Private key file to generate libp2p peer identity (default "p2p.key")
+  -r, --p2p.rendezvous string   Libp2p rendezvous string used for peer discovery (default "doidnode")
+      --rpc.addr string         RPC listen address (default "127.0.0.1:26657")
 ```
 
 ## Test
