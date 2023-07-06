@@ -1,10 +1,13 @@
 package core
 
 import (
+	"context"
 	"math/big"
 
+	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/DOIDFoundation/node/types"
+	ethrpc "github.com/ethereum/go-ethereum/rpc"
 )
 
 type API struct {
@@ -41,4 +44,33 @@ func (a *API) CurrentBlock() *types.Block {
 
 func (a *API) CurrentTD() *big.Int {
 	return a.chain.GetTd()
+}
+
+// NewHeads send a notification each time a new (header) block is appended to the chain.
+func (api *API) NewHeads(ctx context.Context) (*ethrpc.Subscription, error) {
+	notifier, supported := ethrpc.NotifierFromContext(ctx)
+	if !supported {
+		return &ethrpc.Subscription{}, ethrpc.ErrNotificationsUnsupported
+	}
+
+	rpcSub := notifier.CreateSubscription()
+
+	go func() {
+		events.NewChainHead.Subscribe(string(rpcSub.ID), func(data *types.Block) {
+			notifier.Notify(rpcSub.ID, data)
+		})
+
+	Wait:
+		for {
+			select {
+			case <-rpcSub.Err():
+				break Wait
+			case <-notifier.Closed():
+				break Wait
+			}
+		}
+		events.NewChainHead.Unsubscribe(string(rpcSub.ID))
+	}()
+
+	return rpcSub, nil
 }
