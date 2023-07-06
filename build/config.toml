@@ -1,0 +1,6 @@
+home = "."
+[log]
+level = "consensus:info,*:debug"
+[mine]
+threads = 1
+enabled = true

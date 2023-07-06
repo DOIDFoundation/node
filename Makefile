@@ -41,6 +41,13 @@ $(BUILDDIR)/:
 build: $(BUILD_TARGETS)
 .PHONY: build
 
+
+PLATFORMS=darwin-amd64 darwin-arm64 linux-386 linux-amd64 linux-arm64 windows-386 windows-amd64
+build_all:
+	$(foreach PLATFORM, $(PLATFORMS), GOOS=$(word 1,$(subst -, ,${PLATFORM})) GOARCH=$(word 2,$(subst -, ,${PLATFORM})) make doidnode;)
+	$(foreach PLATFORM, $(PLATFORMS), zip -j build/doidnode-$(PLATFORM) build/$(PLATFORM)/doidnode*;)
+	$(foreach PLATFORM, darwin-amd64 darwin-arm64, zip -j build/doidnode-$(PLATFORM) build/doidnode.command;)
+
 doidnode:
 	cd ./cmd/$@ && $(GO_BUILD_ENV) go build $(BUILD_FLAGS) -o $(BUILDDIR)/ ./...
 .PHONY: doidnode
