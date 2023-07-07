@@ -14,8 +14,13 @@ type API struct {
 	chain *BlockChain
 }
 
+type SubAPI struct {
+	chain *BlockChain
+}
+
 func RegisterAPI(chain *BlockChain) {
 	rpc.RegisterName("doid", &API{chain: chain})
+	rpc.RegisterName("doid", &SubAPI{chain: chain})
 }
 
 func (a *API) GetBlockByHeight(height uint64) *types.Block {
@@ -47,7 +52,7 @@ func (a *API) CurrentTD() *big.Int {
 }
 
 // NewHeads send a notification each time a new (header) block is appended to the chain.
-func (api *API) NewHeads(ctx context.Context) (*ethrpc.Subscription, error) {
+func (api *SubAPI) NewHeads(ctx context.Context) (*ethrpc.Subscription, error) {
 	notifier, supported := ethrpc.NotifierFromContext(ctx)
 	if !supported {
 		return &ethrpc.Subscription{}, ethrpc.ErrNotificationsUnsupported
