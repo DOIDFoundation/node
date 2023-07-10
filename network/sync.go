@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/events"
@@ -142,6 +143,7 @@ func (s *syncService) getBlocks(stream network.Stream, height uint64, count uint
 	if len(*blocks) != int(count) {
 		return nil, fmt.Errorf("want %v blocks, got %v", count, len(*blocks))
 	}
+	s.Logger.Info("got blocks", "from", height, "count", count, "gap", time.Since(time.Unix(int64((*blocks)[len(*blocks)-1].Header.Time), 0)))
 	return *blocks, nil
 }
 
