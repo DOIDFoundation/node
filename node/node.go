@@ -1,6 +1,8 @@
 package node
 
 import (
+	"errors"
+
 	"github.com/DOIDFoundation/node/consensus"
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/doid"
@@ -45,8 +47,20 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 		network: network.NewNetwork(chain, logger),
 		mempool: mempool.NewMempool(chain, logger),
 	}
+	if node.rpc == nil {
+		return nil, errors.New("failed to setup RPC")
+	}
+	if node.network == nil {
+		return nil, errors.New("failed to setup network")
+	}
+	if node.mempool == nil {
+		return nil, errors.New("failed to setup mempool")
+	}
 	if viper.GetBool(flags.Mine_Enabled) {
 		node.consensus = consensus.New(chain, logger)
+		if node.consensus == nil {
+			return nil, errors.New("failed to setup consensus")
+		}
 	}
 	node.BaseService = *service.NewBaseService(logger.With("module", "node"), "Node", node)
 

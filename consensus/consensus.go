@@ -25,6 +25,7 @@ var two256 = new(big.Int).Exp(big.NewInt(2), big.NewInt(256), big.NewInt(0))
 type Consensus struct {
 	service.BaseService
 	wg       sync.WaitGroup
+	miner    types.Address
 	taskCh   chan struct{}
 	resultCh chan *types.Block
 	chain    *core.BlockChain
@@ -34,11 +35,18 @@ type Consensus struct {
 
 func New(chain *core.BlockChain, logger log.Logger) *Consensus {
 	consensus := &Consensus{
+		miner:    types.HexToAddress(viper.GetString(flags.Mine_Miner)),
 		taskCh:   make(chan struct{}),
 		resultCh: make(chan *types.Block),
 		chain:    chain,
 	}
 	consensus.BaseService = *service.NewBaseService(logger.With("module", "consensus"), "Consensus", consensus)
+	if consensus.miner.String() == "0000000000000000000000000000000000000000" {
+		consensus.Logger.Error("no miner account, try set by --mine.miner")
+		return nil
+	} else {
+		consensus.Logger.Info("miner account", "address", consensus.miner)
+	}
 	consensus.registerEventHandlers()
 	return consensus
 }
@@ -254,6 +262,7 @@ func (c *Consensus) commitWork() {
 	c.target = new(big.Int).Div(two256, header.Difficulty)
 
 	header.ParentHash = parent.Hash()
+	header.Miner = c.miner
 	header.Time = uint64(time.Now().Unix())
 	header.Height.Add(header.Height, big.NewInt(1))
 	header.Difficulty.Set(types.CalcDifficulty(header.Time, parent.Header))

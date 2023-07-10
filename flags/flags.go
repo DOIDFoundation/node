@@ -10,6 +10,7 @@ const (
 
 	Mine_Enabled = "mine.enabled"
 	Mine_Threads = "mine.threads"
+	Mine_Miner   = "mine.miner"
 
 	P2P_Addr       = "p2p.addr"
 	P2P_Rendezvous = "p2p.rendezvous"

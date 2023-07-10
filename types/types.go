@@ -4,6 +4,7 @@ import (
 	"github.com/cometbft/cometbft/crypto/merkle"
 	cmtbytes "github.com/cometbft/cometbft/libs/bytes"
 	cmttypes "github.com/cometbft/cometbft/types"
+	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -17,6 +18,10 @@ type (
 	Txs        = cmttypes.Txs
 	TxType     = uint8
 )
+
+func HexToAddress(s string) Address {
+	return common.HexToAddress(s).Bytes()
+}
 
 var EncodeNonce = ethtypes.EncodeNonce
 

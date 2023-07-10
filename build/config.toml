@@ -2,5 +2,8 @@ home = "."
 [log]
 level = "consensus:info,*:debug"
 [mine]
+# CPU logical cores to be used for mining
 threads = 1
-enabled = true
+# uncomment the following lines to do mining
+#enabled = true
+#miner = "USE_YOUR_ADDRESS_HERE"

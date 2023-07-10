@@ -14,6 +14,7 @@ func init() {
 	StartCmd.Flags().String(flags.DB_Engine, "goleveldb", "Backing database implementation to use ('memdb' or 'goleveldb')")
 	StartCmd.Flags().BoolP(flags.Mine_Enabled, "m", false, "Enable mining")
 	StartCmd.Flags().Uint(flags.Mine_Threads, 0, "Number of threads to start mining, 0 indicates number of logical CPUs")
+	StartCmd.Flags().String(flags.Mine_Miner, "", "Miner address to be included in mined blocks")
 	StartCmd.Flags().Bool(flags.RPC_Http, false, "Enable RPC over http")
 	StartCmd.Flags().String(flags.RPC_HttpAddr, "127.0.0.1:8556", "RPC over HTTP listen address")
 	StartCmd.Flags().Bool(flags.RPC_Ws, false, "Enable RPC over websocket")
