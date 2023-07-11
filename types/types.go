@@ -1,6 +1,8 @@
 package types
 
 import (
+	"math/big"
+
 	"github.com/cometbft/cometbft/crypto/merkle"
 	cmtbytes "github.com/cometbft/cometbft/libs/bytes"
 	cmttypes "github.com/cometbft/cometbft/types"
@@ -57,8 +59,21 @@ type Receipt struct {
 	Logs   HexBytes `json:"logs"`
 }
 
+type StoredReceipt struct {
+	Receipt
+	// Inclusion information: These fields provide information about the inclusion of the
+	// transaction corresponding to this receipt.
+	BlockHash        Hash     `json:"blockHash,omitempty"`
+	BlockNumber      *big.Int `json:"blockNumber,omitempty"`
+	TransactionIndex uint     `json:"transactionIndex"`
+}
+
 func (r *Receipt) Hash() Hash {
 	return rlpHash(r)
+}
+
+func (r *Receipt) Success() bool {
+	return len(r.Result) == 0
 }
 
 type Receipts []*Receipt

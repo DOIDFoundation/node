@@ -14,6 +14,8 @@ var (
 	txsPrefix          = []byte("T") // txsPrefix + hash -> txs
 	unclesPrefix       = []byte("u") // unclesPrefix + hash -> uncles
 	receiptsPrefix     = []byte("r") // receiptsPrefix + hash -> receipts
+	receiptPrefix      = []byte("R") // receiptPrefix + hash -> receipt
+	transactionPrefix  = []byte("x") // transactionPrefix + hash -> transaction
 
 	// headBlockKey tracks the latest known full block's hash.
 	headBlockKey = []byte("LastBlock")
@@ -59,4 +61,14 @@ func receiptsKey(hash types.Hash) []byte {
 // txsKey = txsPrefix + hash
 func txsKey(hash types.Hash) []byte {
 	return append(txsPrefix, hash.Bytes()...)
+}
+
+// receiptKey = receiptPrefix + hash
+func receiptKey(hash types.Hash) []byte {
+	return append(receiptPrefix, hash.Bytes()...)
+}
+
+// transactionKey = transactionPrefix + hash
+func transactionKey(hash types.Hash) []byte {
+	return append(transactionPrefix, hash.Bytes()...)
 }
