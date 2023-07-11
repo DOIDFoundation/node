@@ -71,12 +71,26 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 		return nil
 	}
 
-	dso := dsbadger.DefaultOptions
-
 	dataDir := filepath.Join(viper.GetString(flags.Home), "data")
-	ds, err := dsbadger.NewDatastore(filepath.Join(dataDir, "libp2p-peerstore-v0"), &dso)
+
+	if fi, err := os.Stat(dataDir); err == nil {
+		if !fi.IsDir() {
+			network.Logger.Error("not a directory", "path", dataDir)
+			return nil
+		}
+	} else if os.IsNotExist(err) {
+		if err := os.MkdirAll(dataDir, 0755); err != nil {
+			network.Logger.Error("failed to create directory", "path", dataDir, "err", err)
+			return nil
+		}
+	} else {
+		network.Logger.Error("failed to check data directory", "path", dataDir, "err", err)
+		return nil
+	}
+
+	ds, err := dsbadger.NewDatastore(filepath.Join(dataDir, "libp2p-peerstore-v0"), &dsbadger.DefaultOptions)
 	if err != nil {
-		network.Logger.Error("Failed to create peerstore", "err", err, "path", filepath.Join(dataDir, "libp2p-peerstore-v0"))
+		network.Logger.Error("Failed to create badger store", "err", err, "path", filepath.Join(dataDir, "libp2p-peerstore-v0"))
 		return nil
 	}
 
@@ -86,8 +100,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 		return nil
 	}
 
-	dsoDht := dsbadger.DefaultOptions
-	dsDht, err := dsbadger.NewDatastore(filepath.Join(dataDir, "libp2p-dht-v0"), &dsoDht)
+	dsDht, err := dsbadger.NewDatastore(filepath.Join(dataDir, "libp2p-dht-v0"), &dsbadger.DefaultOptions)
 	if err != nil {
 		network.Logger.Error("Failed to create dht store", "err", err, "path", filepath.Join(dataDir, "libp2p-dht-v0"))
 		return nil
