@@ -44,6 +44,7 @@ type Network struct {
 	discovery     *discovery
 	pubsub        *pubsub.PubSub
 	topicBlock    *pubsub.Topic
+	topicTx       *pubsub.Topic
 	blockChain    *core.BlockChain
 	networkHeight *big.Int
 	syncing       atomic.Bool
@@ -157,6 +158,7 @@ func (n *Network) OnStart() error {
 
 	go n.notifyPeerFoundEvent()
 	go n.registerBlockSubscribers()
+	go n.registerTxSubscribers()
 
 	n.discovery.Start()
 
@@ -211,6 +213,7 @@ func (n *Network) unregisterEventHandlers() {
 	eventPeerState.Unsubscribe(n.String())
 	events.ForkDetected.Unsubscribe(n.String())
 	events.NewMinedBlock.Unsubscribe(n.String())
+	events.NewTx.Unsubscribe(n.String())
 }
 
 func (n *Network) registerEventHandlers() {
@@ -246,6 +249,18 @@ func (n *Network) registerEventHandlers() {
 			return
 		}
 		n.topicBlock.Publish(ctx, b)
+	})
+	events.NewTx.Subscribe(n.String(), func(data types.Tx) {
+		if n.topicTx == nil {
+			n.Logger.Info("not broadcasting, new tx topic not joined")
+			return
+		}
+		b, err := rlp.EncodeToBytes(data)
+		if err != nil {
+			n.Logger.Error("failed to encode tx for broadcasting", "err", err)
+			return
+		}
+		n.topicTx.Publish(ctx, b)
 	})
 }
 

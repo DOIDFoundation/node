@@ -53,38 +53,41 @@ func NewMempool(chain *core.BlockChain, logger log.Logger) *Mempool {
 		reqResetCh:      make(chan *txpoolResetRequest),
 	}
 	pool.BaseService = *service.NewBaseService(logger.With("module", "mempool"), "mempool", pool)
-	pool.registerEventHandlers()
 	return pool
 }
 
 func (pool *Mempool) OnStart() error {
-	header := pool.chain.LatestBlock().Header
-	pool.reset(nil, header)
+	pool.registerEventHandlers()
 
 	pool.wg.Add(1)
 	go pool.scheduleReorgLoop()
 
-	events.NewChainHead.Subscribe(pool.String(), func(block *types.Block) {
-		pool.requestReset(header, block.Header)
-		header = block.Header
-	})
 	pool.wg.Add(1)
 	go pool.loop()
 	return nil
 }
 
 func (pool *Mempool) registerEventHandlers() {
-	events.NewTx.Subscribe(pool.String(), func(data types.Tx) {
+	header := pool.chain.LatestBlock().Header
+	pool.reset(nil, header)
+	events.NewChainHead.Subscribe(pool.String(), func(block *types.Block) {
+		pool.requestReset(header, block.Header)
+		header = block.Header
+	})
+	onTx := func(data types.Tx) {
 		err := pool.AddLocal(data)
 		if err != nil {
 			pool.Logger.Error("failed to add transaction", "err", err)
 		}
-	})
+	}
+	events.NewTx.Subscribe(pool.String(), onTx)
+	events.NewNetworkTx.Subscribe(pool.String(), onTx)
 }
 
 func (pool *Mempool) OnStop() {
 	events.NewChainHead.Unsubscribe(pool.String())
 	events.NewTx.Unsubscribe(pool.String())
+	events.NewNetworkTx.Unsubscribe(pool.String())
 }
 
 func (pool *Mempool) Stats() (int, int) {

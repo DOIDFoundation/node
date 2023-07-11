@@ -12,6 +12,7 @@ var (
 	NewChainHead    = &FeedOf[*types.Block]{}
 	NewMinedBlock   = &FeedOf[*types.Block]{}
 	NewNetworkBlock = &FeedOf[*types.Block]{}
+	NewNetworkTx    = &FeedOf[types.Tx]{}
 	NewTx           = &FeedOf[types.Tx]{}
 	SyncStarted     = &FeedOf[struct{}]{}
 	SyncFinished    = &FeedOf[struct{}]{}
