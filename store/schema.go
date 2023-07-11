@@ -11,6 +11,9 @@ var (
 	headerTDSuffix     = []byte("t") // headerPrefix + num (uint64 big endian) + hash + headerTDSuffix -> td
 	headerHashPrefix   = []byte("n") // headerHashPrefix + num (uint64 big endian) -> hash
 	headerHeightPrefix = []byte("H") // headerHeightPrefix + hash -> num (uint64 big endian)
+	txsPrefix          = []byte("T") // txsPrefix + hash -> txs
+	unclesPrefix       = []byte("u") // unclesPrefix + hash -> uncles
+	receiptsPrefix     = []byte("r") // receiptsPrefix + hash -> receipts
 
 	// headBlockKey tracks the latest known full block's hash.
 	headBlockKey = []byte("LastBlock")
@@ -41,4 +44,19 @@ func headerHashKey(height uint64) []byte {
 // headerHeightKey = headerHeightPrefix + hash
 func headerHeightKey(hash types.Hash) []byte {
 	return append(headerHeightPrefix, hash.Bytes()...)
+}
+
+// unclesKey = unclesPrefix + hash
+func unclesKey(hash types.Hash) []byte {
+	return append(unclesPrefix, hash.Bytes()...)
+}
+
+// receiptsKey = receiptsPrefix + hash
+func receiptsKey(hash types.Hash) []byte {
+	return append(receiptsPrefix, hash.Bytes()...)
+}
+
+// txsKey = txsPrefix + hash
+func txsKey(hash types.Hash) []byte {
+	return append(txsPrefix, hash.Bytes()...)
 }

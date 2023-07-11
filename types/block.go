@@ -9,7 +9,7 @@ import (
 
 type Block struct {
 	Header   *Header `json:"header"`
-	Data     `json:"data"`
+	Txs      `json:"txs"`
 	Uncles   Headers `json:"uncles"`
 	Receipts `json:"receipts"`
 
@@ -44,7 +44,7 @@ func (b *Block) fillHeader() {
 		b.Header.UncleHash = b.Uncles.Hash()
 	}
 	if b.Header.TxHash == nil {
-		b.Header.TxHash = b.Data.Hash()
+		b.Header.TxHash = b.Txs.Hash()
 	}
 	if b.Header.ReceiptHash == nil {
 		b.Header.ReceiptHash = b.Receipts.Hash()

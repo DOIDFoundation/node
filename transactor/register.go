@@ -14,7 +14,7 @@ func applyRegister(tree *iavl.MutableTree, encoded *encodedtx.EncodedTx) (result
 	if err := encoded.Decode(&register); err != nil {
 		return resRejected, err
 	}
-	key := []byte(register.DOID)
+	key := types.DOIDHash(register.DOID)
 	has, err := tree.Has(key)
 	if err != nil {
 		return resRejected, err
