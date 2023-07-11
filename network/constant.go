@@ -9,25 +9,15 @@ const (
 	TopicBlock = "/doid/topic/block/1"
 )
 
-var (
-	ListenHost = "0.0.0.0"
-	ListenPort = "3001"
-)
-
 const prefixCMDLength = 12
 const versionInfo = byte(0x00)
 
 type command string
 
 const (
-	cGetHash     command = "getHash"
-	cHashMap     command = "hashMap"
-	cTransaction command = "transaction"
-	cMyError     command = "myError"
-	cMyTest      command = "myTest"
+	cMyError command = "myError"
 )
 
 const (
-	metaVersion = "v"
-	metaState   = "s"
+	metaState = "s"
 )
