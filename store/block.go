@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"math/big"
 	"path/filepath"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/cometbft/cometbft/libs/log"
-	cmttypes "github.com/cometbft/cometbft/types"
 )
 
 type BlockStore struct {
@@ -38,34 +38,41 @@ func (bs *BlockStore) ReadBlock(height uint64, hash types.Hash) *types.Block {
 	if header == nil {
 		return nil
 	}
-	// data := bs.ReadData(hash)
-	// if data == nil {
-	// 	return nil
-	// }
-	return types.NewBlockWithHeader(header)
+	uncles := new(types.Headers)
+	if err := bs.ReadData(unclesKey(header.UncleHash), uncles); err != nil {
+		bs.Logger.Error("invalid block uncles", "err", err, "hash", header.UncleHash)
+		return nil
+	}
+	txs := new(types.Txs)
+	if err := bs.ReadData(txsKey(header.TxHash), txs); err != nil {
+		bs.Logger.Error("invalid block txs", "err", err, "hash", header.TxHash)
+		return nil
+	}
+	receipts := new(types.Receipts)
+	if err := bs.ReadData(receiptsKey(header.ReceiptHash), receipts); err != nil {
+		bs.Logger.Error("invalid block receipts", "err", err, "hash", header.ReceiptHash)
+		return nil
+	}
+	block := types.NewBlockWithHeader(header)
+	block.Txs = *txs
+	block.Receipts = *receipts
+	block.Uncles = *uncles
+	return block
 }
 
 func (bs *BlockStore) WriteBlock(block *types.Block) {
-	// bs.WriteData(block.Data)
+	bs.WriteData(txsKey(block.Txs.Hash()), block.Txs)
+	bs.WriteData(unclesKey(block.Uncles.Hash()), block.Uncles)
+	bs.WriteData(receiptsKey(block.Receipts.Hash()), block.Receipts)
 	block.Hash() // call hash to fill header if needed
 	bs.WriteHeader(block.Header)
 }
 
 // ReadHeader retrieves the block header corresponding to the hash.
 func (bs *BlockStore) ReadHeader(height uint64, hash types.Hash) *types.Header {
-	bz, err := bs.db.Get(headerKey(height, hash))
-	if err != nil {
-		bs.Logger.Error("failed to read block header", "err", err, "height", height, "hash", hash)
-		return nil
-	}
-
-	if len(bz) == 0 {
-		return nil
-	}
-
 	header := new(types.Header)
-	if err := rlp.Decode(bytes.NewReader(bz), header); err != nil {
-		bs.Logger.Error("Invalid block header RLP", "err", err, "height", height, "hash", hash)
+	if err := bs.ReadData(headerKey(height, hash), header); err != nil {
+		bs.Logger.Error("invalid block header", "err", err, "height", height, "hash", hash)
 		return nil
 	}
 	return header
@@ -77,21 +84,11 @@ func (bs *BlockStore) WriteHeader(header *types.Header) {
 		hash   = header.Hash()
 		height = header.Height.Uint64()
 	)
-
-	// Write the encoded header
-	data, err := rlp.EncodeToBytes(header)
-	if err != nil {
-		bs.Logger.Error("failed to RLP encode header", "err", err)
-		panic(err)
-	}
-	if err := bs.db.Set(headerKey(height, hash), data); err != nil {
-		bs.Logger.Error("failed to store header by hash", "err", err)
-		panic(err)
-	}
+	bs.WriteData(headerKey(height, hash), header)
 	bs.WriteHeightByHash(hash, height)
 }
 
-// ReadDataRLP retrieves the block body (transactions and uncles) in RLP encoding.
+// ReadDataRLP retrieves the data in RLP encoding.
 func (bs *BlockStore) ReadDataRLP(hash types.Hash) rlp.RawValue {
 	bz, err := bs.db.Get(hash)
 	if err != nil {
@@ -105,22 +102,26 @@ func (bs *BlockStore) ReadDataRLP(hash types.Hash) rlp.RawValue {
 	return bz
 }
 
-// ReadData retrieves the block body corresponding to the hash.
-func (bs *BlockStore) ReadData(hash types.Hash) *cmttypes.Data {
+// ReadData retrieves the data corresponding to the hash and decode into result.
+func (bs *BlockStore) ReadData(hash types.Hash, result interface{}) error {
 	data := bs.ReadDataRLP(hash)
 	if len(data) == 0 {
-		return nil
+		return errors.New("empty data read")
 	}
-	body := new(cmttypes.Data)
-	if err := rlp.Decode(bytes.NewReader(data), body); err != nil {
-		bs.Logger.Error("Invalid block body RLP", "hash", hash, "err", err)
-		return nil
-	}
-	return body
+	return rlp.DecodeBytes(data, result)
 }
 
-func (bs *BlockStore) WriteData(data *cmttypes.Data) {
-	bs.Logger.Error("not implemented")
+func (bs *BlockStore) WriteData(hash types.Hash, data interface{}) {
+	// Write the encoded data
+	bz, err := rlp.EncodeToBytes(data)
+	if err != nil {
+		bs.Logger.Error("failed to RLP encode header", "err", err)
+		panic(err)
+	}
+	if err := bs.db.Set(hash, bz); err != nil {
+		bs.Logger.Error("failed to store header by hash", "err", err)
+		panic(err)
+	}
 }
 
 // ReadHeightByHash returns the header height assigned to a hash.

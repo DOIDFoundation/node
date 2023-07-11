@@ -39,7 +39,7 @@ func buildBlock(t *testing.T, chain *core.BlockChain, txs types.Txs, time uint64
 	header.Time = time
 	header.Difficulty = types.CalcDifficulty(time, parent.Header)
 	newBlock := types.NewBlockWithHeader(header)
-	newBlock.Data = types.Data{Txs: txs}
+	newBlock.Txs = txs
 	return newBlock
 }
 
@@ -127,7 +127,7 @@ func TestApplyHeaderChain(t *testing.T) {
 	td := chain.GetTd()
 	register := &tx.Register{DOID: "test", Owner: []byte("test")}
 	bz, _ := tx.NewTx(register)
-	blocks[3].Data.Txs = types.Txs{bz}
+	blocks[3].Txs = types.Txs{bz}
 	blocks[4].Header.ParentHash = blocks[3].Hash()
 	assert.NoError(t, hc.AppendBlocks(blocks))
 	assert.NotZero(t, hc.GetTd())

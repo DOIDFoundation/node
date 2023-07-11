@@ -44,6 +44,7 @@ type Network struct {
 	discovery     *discovery
 	pubsub        *pubsub.PubSub
 	topicBlock    *pubsub.Topic
+	topicTx       *pubsub.Topic
 	blockChain    *core.BlockChain
 	networkHeight *big.Int
 	syncing       atomic.Bool
@@ -71,12 +72,26 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 		return nil
 	}
 
-	dso := dsbadger.DefaultOptions
-
 	dataDir := filepath.Join(viper.GetString(flags.Home), "data")
-	ds, err := dsbadger.NewDatastore(filepath.Join(dataDir, "libp2p-peerstore-v0"), &dso)
+
+	if fi, err := os.Stat(dataDir); err == nil {
+		if !fi.IsDir() {
+			network.Logger.Error("not a directory", "path", dataDir)
+			return nil
+		}
+	} else if os.IsNotExist(err) {
+		if err := os.MkdirAll(dataDir, 0755); err != nil {
+			network.Logger.Error("failed to create directory", "path", dataDir, "err", err)
+			return nil
+		}
+	} else {
+		network.Logger.Error("failed to check data directory", "path", dataDir, "err", err)
+		return nil
+	}
+
+	ds, err := dsbadger.NewDatastore(filepath.Join(dataDir, "libp2p-peerstore-v0"), &dsbadger.DefaultOptions)
 	if err != nil {
-		network.Logger.Error("Failed to create peerstore", "err", err, "path", filepath.Join(dataDir, "libp2p-peerstore-v0"))
+		network.Logger.Error("Failed to create badger store", "err", err, "path", filepath.Join(dataDir, "libp2p-peerstore-v0"))
 		return nil
 	}
 
@@ -86,8 +101,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 		return nil
 	}
 
-	dsoDht := dsbadger.DefaultOptions
-	dsDht, err := dsbadger.NewDatastore(filepath.Join(dataDir, "libp2p-dht-v0"), &dsoDht)
+	dsDht, err := dsbadger.NewDatastore(filepath.Join(dataDir, "libp2p-dht-v0"), &dsbadger.DefaultOptions)
 	if err != nil {
 		network.Logger.Error("Failed to create dht store", "err", err, "path", filepath.Join(dataDir, "libp2p-dht-v0"))
 		return nil
@@ -144,6 +158,7 @@ func (n *Network) OnStart() error {
 
 	go n.notifyPeerFoundEvent()
 	go n.registerBlockSubscribers()
+	go n.registerTxSubscribers()
 
 	n.discovery.Start()
 
@@ -198,6 +213,7 @@ func (n *Network) unregisterEventHandlers() {
 	eventPeerState.Unsubscribe(n.String())
 	events.ForkDetected.Unsubscribe(n.String())
 	events.NewMinedBlock.Unsubscribe(n.String())
+	events.NewTx.Unsubscribe(n.String())
 }
 
 func (n *Network) registerEventHandlers() {
@@ -233,6 +249,18 @@ func (n *Network) registerEventHandlers() {
 			return
 		}
 		n.topicBlock.Publish(ctx, b)
+	})
+	events.NewTx.Subscribe(n.String(), func(data types.Tx) {
+		if n.topicTx == nil {
+			n.Logger.Info("not broadcasting, new tx topic not joined")
+			return
+		}
+		b, err := rlp.EncodeToBytes(data)
+		if err != nil {
+			n.Logger.Error("failed to encode tx for broadcasting", "err", err)
+			return
+		}
+		n.topicTx.Publish(ctx, b)
 	})
 }
 

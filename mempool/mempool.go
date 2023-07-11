@@ -1,7 +1,9 @@
 package mempool
 
 import (
+	"bytes"
 	"errors"
+	"math"
 	"sync"
 	"time"
 
@@ -10,14 +12,6 @@ import (
 	"github.com/DOIDFoundation/node/types"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
-	"github.com/ethereum/go-ethereum/event"
-)
-
-// NewTxsEvent is posted when a batch of transactions enter the transaction pool.
-type NewTxsEvent struct{ Tx types.Tx }
-
-const (
-	chainHeadChanSize = 10
 )
 
 var (
@@ -31,16 +25,14 @@ var (
 
 type Mempool struct {
 	service.BaseService
-	chain  *core.BlockChain
-	txFeed event.Feed
-	mu     sync.RWMutex
+	chain *core.BlockChain
+	mu    sync.RWMutex
 
 	// pending map[common.Address]*txList   // All currently processable transactions
 	// queue   map[common.Address]*txList   // Queued but non-processable transactions
 	all *txLookup // All transactions to allow lookups
 
 	reqResetCh      chan *txpoolResetRequest
-	chainHeadSub    event.Subscription
 	queueTxEventCh  chan types.Tx
 	reorgShutdownCh chan struct{} // requests shutdown of scheduleReorgLoop
 	reorgDoneCh     chan chan struct{}
@@ -61,28 +53,41 @@ func NewMempool(chain *core.BlockChain, logger log.Logger) *Mempool {
 		reqResetCh:      make(chan *txpoolResetRequest),
 	}
 	pool.BaseService = *service.NewBaseService(logger.With("module", "mempool"), "mempool", pool)
-	pool.registerEventHandlers()
 	return pool
 }
 
 func (pool *Mempool) OnStart() error {
-	pool.reset(nil, types.CopyHeader(pool.chain.LatestBlock().Header))
+	pool.registerEventHandlers()
 
 	pool.wg.Add(1)
 	go pool.scheduleReorgLoop()
 
-	events.NewChainHead.Subscribe(pool.String(), func(block *types.Block) {
-		pool.requestReset(pool.chain.LatestBlock().Header, block.Header)
-	})
 	pool.wg.Add(1)
 	go pool.loop()
 	return nil
 }
 
 func (pool *Mempool) registerEventHandlers() {
-	events.NewTx.Subscribe(pool.String(), func(data types.Tx) {
-		pool.AddLocal(data)
+	header := pool.chain.LatestBlock().Header
+	pool.reset(nil, header)
+	events.NewChainHead.Subscribe(pool.String(), func(block *types.Block) {
+		pool.requestReset(header, block.Header)
+		header = block.Header
 	})
+	onTx := func(data types.Tx) {
+		err := pool.AddLocal(data)
+		if err != nil {
+			pool.Logger.Error("failed to add transaction", "err", err)
+		}
+	}
+	events.NewTx.Subscribe(pool.String(), onTx)
+	events.NewNetworkTx.Subscribe(pool.String(), onTx)
+}
+
+func (pool *Mempool) OnStop() {
+	events.NewChainHead.Unsubscribe(pool.String())
+	events.NewTx.Unsubscribe(pool.String())
+	events.NewNetworkTx.Unsubscribe(pool.String())
 }
 
 func (pool *Mempool) Stats() (int, int) {
@@ -145,13 +150,12 @@ func (pool *Mempool) validateTx(tx types.Tx) (err error) {
 	return nil
 }
 
-func (pool *Mempool) AddLocals(txs []types.Tx) error {
-	errs := pool.AddTxs(txs)
-	return errs[0]
+func (pool *Mempool) AddLocals(txs []types.Tx) []error {
+	return pool.AddTxs(txs)
 }
 
 func (pool *Mempool) AddLocal(tx types.Tx) error {
-	return pool.AddLocals(types.Txs{tx})
+	return pool.AddLocals(types.Txs{tx})[0]
 }
 
 func (pool *Mempool) add(tx types.Tx, local bool) (replaced bool, err error) {
@@ -167,7 +171,7 @@ func (pool *Mempool) add(tx types.Tx, local bool) (replaced bool, err error) {
 	if pool.all.Slots()+numSlots(tx) > 100 {
 		return false, ErrTxPoolOverflow
 	}
-	pool.queueTxEvent(tx)
+	// pool.queueTxEvent(tx)
 
 	err = pool.enqueueTx(hash, tx)
 	if err != nil {
@@ -220,6 +224,10 @@ func (pool *Mempool) AddTxs(txs []types.Tx) []error {
 	return errs
 }
 
+func (pool *Mempool) Pending() types.Txs {
+	return pool.all.Flatten()
+}
+
 func (pool *Mempool) scheduleReorgLoop() {
 	defer pool.wg.Done()
 
@@ -270,16 +278,74 @@ func (pool *Mempool) runReorg(done chan struct{}, reset *txpoolResetRequest, tx 
 	// pool.truncatePending()
 	// pool.truncateQueue()
 	pool.mu.Unlock()
-
-	pool.txFeed.Send(NewTxsEvent{tx})
 }
 
-func (pool *Mempool) reset(soldHead, newHead *types.Header) {
+func (pool *Mempool) reset(oldHead, newHead *types.Header) {
+	// If we're reorging an old state, reinject all dropped transactions
+	var reinject types.Txs
 
-	// Initialize
-	if newHead == nil {
-		newHead = pool.chain.LatestBlock().Header
+	if oldHead != nil && !bytes.Equal(oldHead.Hash(), newHead.ParentHash) {
+		// If the reorg is too deep, avoid doing it (will happen during fast sync)
+		oldNum := oldHead.Height.Uint64()
+		newNum := newHead.Height.Uint64()
+
+		if depth := uint64(math.Abs(float64(oldNum) - float64(newNum))); depth > 64 {
+			pool.Logger.Debug("Skipping deep transaction reorg", "depth", depth)
+		} else {
+			// Reorg seems shallow enough to pull in all transactions into memory
+			var discarded, included types.Txs
+			var (
+				rem = pool.chain.GetBlock(oldHead.Height.Uint64(), oldHead.Hash())
+				add = pool.chain.GetBlock(newHead.Height.Uint64(), newHead.Hash())
+			)
+			if rem == nil {
+				// This can happen if a setHead is performed, where we simply discard the old
+				// head from the chain.
+				// If that is the case, we don't have the lost transactions any more, and
+				// there's nothing to add
+				if newNum < oldNum {
+					// If the reorg ended up on a lower number, it's indicative of setHead being the cause
+					pool.Logger.Debug("Skipping transaction reset caused by setHead",
+						"old", oldHead.Hash(), "oldnum", oldNum, "new", newHead.Hash(), "newnum", newNum)
+				} else {
+					// If we reorged to a same or higher number, then it's not a case of setHead
+					pool.Logger.Error("Transaction pool reset with missing oldhead",
+						"old", oldHead.Hash(), "oldnum", oldNum, "new", newHead.Hash(), "newnum", newNum)
+				}
+				return
+			}
+			for rem.Header.Height.Cmp(add.Header.Height) > 0 {
+				discarded = append(discarded, rem.Txs...)
+				if rem = pool.chain.GetBlock(rem.Header.Height.Uint64()-1, rem.Header.ParentHash); rem == nil {
+					pool.Logger.Error("Unrooted old chain seen by tx pool", "block", oldHead.Height, "hash", oldHead.Hash())
+					return
+				}
+			}
+			for add.Header.Height.Cmp(rem.Header.Height) > 0 {
+				included = append(included, add.Txs...)
+				if add = pool.chain.GetBlock(add.Header.Height.Uint64()-1, add.Header.ParentHash); add == nil {
+					pool.Logger.Error("Unrooted new chain seen by tx pool", "block", newHead.Height, "hash", newHead.Hash())
+					return
+				}
+			}
+			for !bytes.Equal(rem.Hash(), add.Hash()) {
+				discarded = append(discarded, rem.Txs...)
+				if rem = pool.chain.GetBlock(rem.Header.Height.Uint64()-1, rem.Header.ParentHash); rem == nil {
+					pool.Logger.Error("Unrooted old chain seen by tx pool", "block", oldHead.Height, "hash", oldHead.Hash())
+					return
+				}
+				included = append(included, add.Txs...)
+				if add = pool.chain.GetBlock(add.Header.Height.Uint64()-1, add.Header.ParentHash); add == nil {
+					pool.Logger.Error("Unrooted new chain seen by tx pool", "block", newHead.Height, "hash", newHead.Hash())
+					return
+				}
+			}
+			reinject = types.TxDifference(discarded, included)
+		}
 	}
+	// Inject any transactions discarded due to reorgs
+	pool.Logger.Debug("Reinjecting stale transactions", "count", len(reinject))
+	pool.AddTxs(reinject)
 }
 
 // txLookup is used internally by TxPool to track transactions while allowing
@@ -424,6 +490,14 @@ func (t *txLookup) Remove(hash types.TxHash) {
 
 	delete(t.locals, hash)
 	delete(t.remotes, hash)
+}
+
+func (t *txLookup) Flatten() types.Txs {
+	txs := make(types.Txs, 0, len(t.locals))
+	for _, tx := range t.locals {
+		txs = append(txs, tx)
+	}
+	return txs
 }
 
 // // RemoteToLocals migrates the transactions belongs to the given locals to locals

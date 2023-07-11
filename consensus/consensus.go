@@ -13,6 +13,7 @@ import (
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/flags"
+	"github.com/DOIDFoundation/node/mempool"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
@@ -29,20 +30,22 @@ type Consensus struct {
 	taskCh   chan struct{}
 	resultCh chan *types.Block
 	chain    *core.BlockChain
+	txpool   *mempool.Mempool
 	current  *types.Block // current working block
 	target   *big.Int     // current difficulty target
 }
 
-func New(chain *core.BlockChain, logger log.Logger) *Consensus {
+func New(chain *core.BlockChain, txpool *mempool.Mempool, logger log.Logger) *Consensus {
 	consensus := &Consensus{
 		miner:    types.HexToAddress(viper.GetString(flags.Mine_Miner)),
 		taskCh:   make(chan struct{}),
 		resultCh: make(chan *types.Block),
 		chain:    chain,
+		txpool:   txpool,
 	}
 	consensus.BaseService = *service.NewBaseService(logger.With("module", "consensus"), "Consensus", consensus)
-	if consensus.miner.String() == "0000000000000000000000000000000000000000" {
-		consensus.Logger.Error("no miner account, try set by --mine.miner")
+	if len(consensus.miner) == 0 {
+		consensus.Logger.Error("miner account not set, set with --mine.miner")
 		return nil
 	} else {
 		consensus.Logger.Info("miner account", "address", consensus.miner)
@@ -174,7 +177,9 @@ func (c *Consensus) mine(id int, seed uint64, abort chan struct{}, found chan *t
 		header    = block.Header
 	)
 
-	block.Data = c.current.Data
+	block.Txs = c.current.Txs
+	block.Uncles = c.current.Uncles
+	block.Receipts = c.current.Receipts
 
 	logger.Debug("started search for new nonces", "seed", seed, "target", target.Text(16))
 
@@ -247,7 +252,8 @@ func (c *Consensus) newWorkLoop() {
 }
 
 func (c *Consensus) commitWork() {
-	result, err := c.chain.Simulate(types.Txs{})
+	txs := c.txpool.Pending()
+	result, err := c.chain.Simulate(txs)
 	if err != nil {
 		c.Logger.Error("failed to simulate transactions", "err", err)
 		return
@@ -269,6 +275,8 @@ func (c *Consensus) commitWork() {
 	header.Root = result.StateRoot
 	header.TxHash = result.TxRoot
 	header.ReceiptHash = result.ReceiptRoot
+	block.Txs = result.Txs
+	block.Receipts = result.Receipts
 
 	c.current = block
 

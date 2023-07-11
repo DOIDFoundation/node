@@ -7,6 +7,7 @@ const (
 
 	TopicPeer  = "/doid/topic/peer/1"
 	TopicBlock = "/doid/topic/block/1"
+	TopicTx    = "/doid/topic/tx/1"
 )
 
 const prefixCMDLength = 12

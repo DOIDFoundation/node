@@ -57,7 +57,7 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 		return nil, errors.New("failed to setup mempool")
 	}
 	if viper.GetBool(flags.Mine_Enabled) {
-		node.consensus = consensus.New(chain, logger)
+		node.consensus = consensus.New(chain, node.mempool, logger)
 		if node.consensus == nil {
 			return nil, errors.New("failed to setup consensus")
 		}

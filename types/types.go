@@ -11,7 +11,6 @@ import (
 type (
 	Address    = cmttypes.Address
 	BlockNonce = ethtypes.BlockNonce
-	Data       = cmttypes.Data
 	HexBytes   = cmtbytes.HexBytes
 	Tx         = cmttypes.Tx
 	TxHash     = cmttypes.TxKey
@@ -20,10 +19,28 @@ type (
 )
 
 func HexToAddress(s string) Address {
-	return common.HexToAddress(s).Bytes()
+	return common.FromHex(s)
 }
 
 var EncodeNonce = ethtypes.EncodeNonce
+
+// TxDifference returns a new set which is the difference between a and b.
+func TxDifference(a, b Txs) Txs {
+	keep := make(Txs, 0, len(a))
+
+	remove := make(map[TxHash]struct{})
+	for _, tx := range b {
+		remove[tx.Key()] = struct{}{}
+	}
+
+	for _, tx := range a {
+		if _, ok := remove[tx.Key()]; !ok {
+			keep = append(keep, tx)
+		}
+	}
+
+	return keep
+}
 
 // Transaction types, append only.
 const (

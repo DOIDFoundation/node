@@ -6,7 +6,6 @@ import (
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/DOIDFoundation/node/types"
-	"github.com/ethereum/go-ethereum/crypto"
 )
 
 type DOIDApi struct {
@@ -23,7 +22,7 @@ func (api *DOIDApi) GetOwner(params DOIDName) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	owner, err := state.Get(crypto.Keccak256([]byte(params.DOID)))
+	owner, err := state.Get(types.DOIDHash(params.DOID))
 	if err != nil {
 		return "", err
 	}

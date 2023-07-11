@@ -143,6 +143,10 @@ func (bc *BlockChain) HasBlock(height uint64, hash types.Hash) bool {
 	return bytes.Equal(bc.blockStore.ReadHashByHeight(height), hash)
 }
 
+func (bc *BlockChain) GetBlock(height uint64, hash types.Hash) *types.Block {
+	return bc.blockStore.ReadBlock(height, hash)
+}
+
 func (bc *BlockChain) BlockByHeight(height uint64) *types.Block {
 	return bc.blockStore.ReadBlock(height, bc.blockStore.ReadHashByHeight(height))
 }
@@ -197,7 +201,7 @@ func (bc *BlockChain) applyBlockAndWrite(block *types.Block) error {
 
 	state := bc.state
 
-	result, err := transactor.ApplyTxs(state, block.Data.Txs)
+	result, err := transactor.ApplyTxs(state, block.Txs)
 	if err != nil {
 		return err
 	}
@@ -261,17 +265,13 @@ func (bc *BlockChain) GetTd() *big.Int {
 
 func (bc *BlockChain) ApplyHeaderChain(hc *HeaderChain) error {
 	td := hc.GetTd()
-	if td == nil {
-		return errors.New("not applying empty header chain")
+	if td == nil || len(hc.headers) == 0 {
+		return nil
 	}
 	currentBlock := bc.LatestBlock()
 	currentTd := bc.GetTd()
 	if td.Cmp(currentTd) <= 0 {
 		return errors.New("total difficulty lower than current")
-	}
-
-	if len(hc.headers) == 0 {
-		return errors.New("not applying empty header chain")
 	}
 
 	// check if we can find first block's parent
