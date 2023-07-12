@@ -26,6 +26,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/core/routing"
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/spf13/viper"
@@ -105,11 +106,44 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 		return nil
 	}
 
+	// Start with the default scaling limits.
+	scalingLimits := rcmgr.DefaultLimits
+
+	// Add limits around included libp2p protocols
+	libp2p.SetDefaultServiceLimits(&scalingLimits)
+
+	// Turn the scaling limits into a concrete set of limits using `.AutoScale`. This
+	// scales the limits proportional to your system memory.
+	scaledDefaultLimits := scalingLimits.AutoScale()
+
+	// Tweak certain settings
+	cfg := rcmgr.PartialLimitConfig{
+		System: rcmgr.ResourceLimits{
+			// Allow unlimited outbound streams
+			StreamsOutbound: rcmgr.Unlimited,
+		},
+		// Everything else is default. The exact values will come from `scaledDefaultLimits` above.
+	}
+
+	// Create our limits by using our cfg and replacing the default values with values from `scaledDefaultLimits`
+	limits := cfg.Build(scaledDefaultLimits)
+
+	// The resource manager expects a limiter, se we create one from our limits.
+	limiter := rcmgr.NewFixedLimiter(limits)
+
+	// Initialize the resource manager
+	rm, err := rcmgr.NewResourceManager(limiter)
+	if err != nil {
+		network.Logger.Error("Failed to create libp2p resource manager", "err", err)
+		return nil
+	}
+
 	var idht *dual.DHT
 	network.host, err = libp2p.New(
 		libp2p.Identity(network.loadPrivateKey()),
 		libp2p.ListenAddrs(addr),
 		libp2p.UserAgent(version.VersionWithCommit()),
+		libp2p.ResourceManager(rm),
 		libp2p.Security(noise.ID, noise.New),
 		libp2p.Peerstore(ps),
 		// Attempt to open ports using uPNP for NATed hosts.
