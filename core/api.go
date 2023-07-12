@@ -98,3 +98,36 @@ func (api *SubAPI) NewHeads(ctx context.Context) (*ethrpc.Subscription, error) {
 
 	return rpcSub, nil
 }
+
+// NewTransactions send a notification each time a new (header) block is appended to the chain.
+func (api *SubAPI) NewTransactions(ctx context.Context) (*ethrpc.Subscription, error) {
+	notifier, supported := ethrpc.NotifierFromContext(ctx)
+	if !supported {
+		return &ethrpc.Subscription{}, ethrpc.ErrNotificationsUnsupported
+	}
+
+	rpcSub := notifier.CreateSubscription()
+
+	go func() {
+		events.NewChainHead.Subscribe(string(rpcSub.ID), func(data *types.Block) {
+			txs := data.Txs
+			for _, tx := range txs {
+				notifier.Notify(rpcSub.ID, tx.Hash())
+			}
+
+		})
+
+	Wait:
+		for {
+			select {
+			case <-rpcSub.Err():
+				break Wait
+			case <-notifier.Closed():
+				break Wait
+			}
+		}
+		events.NewChainHead.Unsubscribe(string(rpcSub.ID))
+	}()
+
+	return rpcSub, nil
+}
