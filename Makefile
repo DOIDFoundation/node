@@ -5,7 +5,7 @@ COMMIT_HASH := $(shell git rev-parse --short HEAD)
 COMMIT_DATE := $(shell git show -s --format=%cs HEAD)
 LD_FLAGS = -X github.com/DOIDFoundation/node/version.Commit=$(COMMIT_HASH) \
 		-X github.com/DOIDFoundation/node/version.Date=$(COMMIT_DATE)
-BUILD_FLAGS = -mod=readonly -ldflags "$(LD_FLAGS)"
+BUILD_FLAGS ?= -mod=readonly -ldflags "$(LD_FLAGS)"
 
 # for cross compiling, TARGETOS and TARGETARCH can be set by docker
 # GOOS and GOARCH values can be found by command: go tool dist list
@@ -46,16 +46,25 @@ PLATFORMS_windows=windows-386 windows-amd64
 PLATFORMS_macos=darwin-amd64 darwin-arm64
 PLATFORMS=$(PLATFORMS_macos) $(PLATFORMS_linux) $(PLATFORMS_windows)
 
-$(PLATFORMS): 
+$(PLATFORMS)::
 	GOOS=$(word 1,$(subst -, ,$@)) GOARCH=$(word 2,$(subst -, ,$@)) make doidnode
+	zip -j build/doidnode-$@ build/$@/doidnode*
+.PHONY: $(PLATFORMS)
+
+$(PLATFORMS_macos)::
+	zip -j build/doidnode-$@ build/doidnode.command
 
 build_all: $(PLATFORMS)
-	$(foreach PLATFORM, $(PLATFORMS), zip -j build/doidnode-$(PLATFORM) build/$(PLATFORM)/doidnode*;)
-	$(foreach PLATFORM, darwin-amd64 darwin-arm64, zip -j build/doidnode-$(PLATFORM) build/doidnode.command;)
+.PHONY: build_all
 
 linux: $(PLATFORMS_linux)
-macos: $(PLATFORM_windows)
-windows: $(PLATFORM_windows)
+.PHONY: linux
+
+macos: $(PLATFORMS_macos)
+.PHONY: macos
+
+windows: $(PLATFORMS_windows)
+.PHONY: windows
 
 doidnode:
 	cd ./cmd/$@ && $(GO_BUILD_ENV) go build $(BUILD_FLAGS) -o $(BUILDDIR)/ ./...
