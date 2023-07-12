@@ -10,15 +10,6 @@ const (
 	TopicTx    = "/doid/topic/tx/1"
 )
 
-const prefixCMDLength = 12
-const versionInfo = byte(0x00)
-
-type command string
-
-const (
-	cMyError command = "myError"
-)
-
 const (
 	metaState = "s"
 )

@@ -38,7 +38,6 @@ var peerNotifier = make(chan peer.AddrInfo)
 
 type Network struct {
 	service.BaseService
-	config *Config
 
 	host          host.Host
 	discovery     *discovery
@@ -58,7 +57,6 @@ type Option func(*Network)
 // NewNetwork returns a new, ready to go, CometBFT Node.
 func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	network := &Network{
-		config:     &DefaultConfig,
 		blockChain: chain,
 
 		networkHeight: big.NewInt(0),
@@ -150,9 +148,6 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 
 // OnStart starts the Network. It implements service.Service.
 func (n *Network) OnStart() error {
-	// Set a function as stream handler. This function is called when a peer
-	// initiates a connection and starts a stream with this peer.
-	n.host.SetStreamHandler(protocol.ID(ProtocolID), n.handleStream)
 	n.host.SetStreamHandler(protocol.ID(ProtocolGetBlocks), n.getBlocksHandler)
 	n.host.SetStreamHandler(protocol.ID(ProtocolState), n.stateHandler)
 

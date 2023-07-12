@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"math/big"
 
@@ -37,6 +38,24 @@ func (a *API) GetBlockByHash(hash types.Hash) *types.Block {
 
 func (a *API) GetBlockTD(hash types.Hash) *big.Int {
 	return a.chain.blockStore.ReadTd(*a.chain.blockStore.ReadHeightByHash(hash), hash)
+}
+
+func (a *API) GetTransactionByHash(hash types.Hash) types.Tx {
+	return a.chain.blockStore.ReadTx(hash)
+}
+
+func (a *API) GetTransactionReceipt(hash types.Hash) *types.StoredReceipt {
+	receipt := a.chain.blockStore.ReadReceipt(hash)
+	if !bytes.Equal(a.chain.blockStore.ReadHashByHeight(receipt.BlockNumber.Uint64()), receipt.BlockHash) {
+		return nil
+	} else if block := a.chain.GetBlock(receipt.BlockNumber.Uint64(), receipt.BlockHash); block == nil {
+		return nil
+	} else if uint(len(block.Txs)) <= receipt.TransactionIndex {
+		return nil
+	} else if bytes.Equal(block.Txs[receipt.TransactionIndex].Hash(), receipt.TxHash) {
+		return receipt
+	}
+	return nil
 }
 
 func (a *API) CurrentHeight() uint64 {

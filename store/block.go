@@ -62,8 +62,22 @@ func (bs *BlockStore) ReadBlock(height uint64, hash types.Hash) *types.Block {
 
 func (bs *BlockStore) WriteBlock(block *types.Block) {
 	bs.WriteData(txsKey(block.Txs.Hash()), block.Txs)
+	for _, t := range block.Txs {
+		bs.WriteData(transactionKey(t.Hash()), t)
+	}
 	bs.WriteData(unclesKey(block.Uncles.Hash()), block.Uncles)
 	bs.WriteData(receiptsKey(block.Receipts.Hash()), block.Receipts)
+	for i, r := range block.Receipts {
+		bs.WriteData(
+			receiptKey(r.TxHash),
+			types.StoredReceipt{
+				Receipt:          *r,
+				BlockHash:        block.Hash(),
+				BlockNumber:      block.Header.Height,
+				TransactionIndex: uint(i),
+			},
+		)
+	}
 	block.Hash() // call hash to fill header if needed
 	bs.WriteHeader(block.Header)
 }
@@ -193,6 +207,23 @@ func (bs *BlockStore) DeleteTd(height uint64, hash types.Hash) {
 		bs.Logger.Error("Failed to delete block total difficulty", "err", err)
 		panic(err)
 	}
+}
+
+func (bs *BlockStore) ReadTx(hash types.Hash) (result types.Tx) {
+	if err := bs.ReadData(transactionKey(hash), &result); err != nil {
+		bs.Logger.Error("Failed to read tx", "err", err, "hash", hash)
+		return nil
+	}
+	return
+}
+
+func (bs *BlockStore) ReadReceipt(hash types.Hash) (result *types.StoredReceipt) {
+	result = new(types.StoredReceipt)
+	if err := bs.ReadData(receiptKey(hash), result); err != nil {
+		bs.Logger.Error("Failed to read receipt", "err", err, "hash", hash)
+		return nil
+	}
+	return
 }
 
 func (bs *BlockStore) Close() error {
