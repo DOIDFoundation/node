@@ -26,22 +26,29 @@ func HexToAddress(s string) Address {
 
 var EncodeNonce = ethtypes.EncodeNonce
 
-// TxDifference returns a new set which is the difference between a and b.
-func TxDifference(a, b Txs) Txs {
-	keep := make(Txs, 0, len(a))
+// TxDifference returns two sets which are dropped and kept from a compared to b.
+func TxDifference(a, b Txs) (dropped, kept Txs) {
+	dropped = make(Txs, 0, len(a))
+	kept = make(Txs, 0, len(a))
 
-	remove := make(map[TxHash]struct{})
+	check := make(map[TxHash]Tx)
 	for _, tx := range b {
-		remove[tx.Key()] = struct{}{}
+		check[tx.Key()] = tx
 	}
 
 	for _, tx := range a {
-		if _, ok := remove[tx.Key()]; !ok {
-			keep = append(keep, tx)
+		if _, ok := check[tx.Key()]; !ok {
+			dropped = append(dropped, tx)
+		} else {
+			kept = append(kept, tx)
+			delete(check, tx.Key())
 		}
 	}
+	for _, v := range check {
+		kept = append(kept, v)
+	}
 
-	return keep
+	return dropped, kept
 }
 
 // Transaction types, append only.

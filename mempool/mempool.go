@@ -224,6 +224,18 @@ func (pool *Mempool) AddTxs(txs []types.Tx) []error {
 	return errs
 }
 
+// remove removes a single transaction from the queue.
+func (pool *Mempool) remove(hash types.TxHash) {
+	// Fetch the transaction we wish to delete
+	tx := pool.all.Get(hash)
+	if tx == nil {
+		return
+	}
+
+	// Remove it from the list of known transactions
+	pool.all.Remove(hash)
+}
+
 func (pool *Mempool) Pending() types.Txs {
 	return pool.all.Flatten()
 }
@@ -258,9 +270,13 @@ func (pool *Mempool) scheduleReorgLoop() {
 			}
 			launchNextRun = true
 			pool.reorgDoneCh <- nextDone
+
 		case tx := <-pool.queueTxEventCh:
 			launchNextRun = true
 			queuedTx = tx
+
+		case <-curDone:
+			curDone = nil
 		}
 
 	}
@@ -281,10 +297,16 @@ func (pool *Mempool) runReorg(done chan struct{}, reset *txpoolResetRequest, tx 
 }
 
 func (pool *Mempool) reset(oldHead, newHead *types.Header) {
-	// If we're reorging an old state, reinject all dropped transactions
-	var reinject types.Txs
+	// Remove all accepted transactions, reinject all dropped transactions if we're reorging an old state.
+	var reinject, accepted types.Txs
 
-	if oldHead != nil && !bytes.Equal(oldHead.Hash(), newHead.ParentHash) {
+	if oldHead == nil {
+		// start from genesis
+		oldHead = pool.chain.BlockByHeight(1).Header
+	}
+	if bytes.Equal(oldHead.Hash(), newHead.ParentHash) {
+		accepted = pool.chain.GetBlock(newHead.Height.Uint64(), newHead.Hash()).Txs
+	} else {
 		// If the reorg is too deep, avoid doing it (will happen during fast sync)
 		oldNum := oldHead.Height.Uint64()
 		newNum := newHead.Height.Uint64()
@@ -340,12 +362,17 @@ func (pool *Mempool) reset(oldHead, newHead *types.Header) {
 					return
 				}
 			}
-			reinject = types.TxDifference(discarded, included)
+			reinject, accepted = types.TxDifference(discarded, included)
 		}
 	}
 	// Inject any transactions discarded due to reorgs
 	pool.Logger.Debug("Reinjecting stale transactions", "count", len(reinject))
 	pool.AddTxs(reinject)
+	// Remove any transactions accepted
+	pool.Logger.Debug("Discard accepted transactions", "count", len(accepted))
+	for _, t := range accepted {
+		pool.remove(t.Key())
+	}
 }
 
 // txLookup is used internally by TxPool to track transactions while allowing

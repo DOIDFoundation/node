@@ -212,7 +212,6 @@ func (bc *BlockChain) applyBlockAndWrite(block *types.Block) error {
 		bc.Logger.Debug("block apply result mismatch", "header", block.Header, "result", result)
 		return errors.New("block apply result mismatch")
 	}
-	// @todo process rejected txs and receipts
 
 	// save state, block and total difficulty
 	hash, version, err := state.SaveVersion()
