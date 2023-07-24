@@ -8,6 +8,8 @@ import (
 	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/DOIDFoundation/node/types"
+	"github.com/DOIDFoundation/node/types/encodedtx"
+	"github.com/DOIDFoundation/node/types/tx"
 	ethrpc "github.com/ethereum/go-ethereum/rpc"
 )
 
@@ -40,8 +42,44 @@ func (a *API) GetBlockTD(hash types.Hash) *big.Int {
 	return a.chain.blockStore.ReadTd(*a.chain.blockStore.ReadHeightByHash(hash), hash)
 }
 
-func (a *API) GetTransactionByHash(hash types.Hash) types.Tx {
-	return a.chain.blockStore.ReadTx(hash)
+// func (a *API) GetTransactionByHash(hash types.Hash) types.Tx {
+// 	return a.chain.blockStore.ReadTx(hash)
+// }
+
+type RpcTransaction struct{
+	tx.Register
+	Type types.TxType `json:"Type"`
+	Hash types.Hash `json:"Hash"`
+}
+
+func newRpcTransaction(in types.Tx) *RpcTransaction{
+	encTx ,err := encodedtx.FromBytes(in);
+	if err != nil{
+		return nil;
+	}
+
+	result := &RpcTransaction{};
+	result.Hash = in.Hash();
+	switch encTx.Type{
+	case  types.TxTypeRegister:
+		registerTx := &tx.Register{};
+		err  = encTx.Decode(registerTx)
+		if err != nil {
+			return nil
+		}
+		result.DOID = registerTx.DOID;
+		result.NameHash = registerTx.NameHash;
+		result.Owner = registerTx.Owner;
+		result.Type = types.TxTypeRegister;
+	}
+
+	return result;
+}
+
+func (a *API) GetTransactionByHash(hash types.Hash) *RpcTransaction {
+	tx := a.chain.blockStore.ReadTx(hash)
+	rpcTx := newRpcTransaction(tx);
+	return rpcTx;
 }
 
 func (a *API) GetTransactionReceipt(hash types.Hash) *types.StoredReceipt {
