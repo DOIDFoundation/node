@@ -32,5 +32,5 @@ func (api *DOIDApi) GetOwner(params DOIDName) (string, error) {
 
 func RegisterAPI(chain *core.BlockChain) {
 	rpc.RegisterName("doid", &DOIDApi{chain: chain})
-	rpc.RegisterName("doid", &PublicTransactionPoolAPI{})
+	rpc.RegisterName("doid", &PublicTransactionPoolAPI{chain: chain})
 }

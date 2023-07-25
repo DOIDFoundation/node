@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 
+	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/DOIDFoundation/node/types/tx"
@@ -20,6 +21,7 @@ type TransactionArgs struct {
 }
 
 type PublicTransactionPoolAPI struct {
+	chain *core.BlockChain
 }
 
 func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (types.Hash, error) {
@@ -33,8 +35,20 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 		return nil, errors.New("missing args: Signature")
 	}
 
-	nameHash := crypto.Keccak256([]byte(args.DOID))
-	recovered, err := crypto.SigToPub(nameHash, args.Signature)
+	state, err := api.chain.LatestState()
+	if err != nil {
+		return nil, err
+	}
+	existsOwner, err := state.Get(types.DOIDHash(args.DOID))
+	if err != nil {
+		return nil, err
+	}
+	if existsOwner != nil {
+		return nil, errors.New("doidname has already been registered")
+	}
+
+	message := crypto.Keccak256(append([]byte(args.DOID), args.Owner...))
+	recovered, err := crypto.SigToPub(message, args.Signature)
 	if err != nil {
 		return nil, errors.New("invalid args: Signature")
 	}
@@ -43,6 +57,7 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 		return nil, errors.New("invalid signature")
 	}
 
+	nameHash := crypto.Keccak256([]byte(args.DOID))
 	register := tx.Register{DOID: args.DOID, Owner: args.Owner, Signature: args.Signature, NameHash: nameHash, From: args.From}
 	t, err := tx.NewTx(&register)
 	if err != nil {
@@ -53,12 +68,12 @@ func (api *PublicTransactionPoolAPI) SendTransaction(args TransactionArgs) (type
 }
 
 func (api *PublicTransactionPoolAPI) Sign(args TransactionArgs) (string, error) {
-	nameHash := crypto.Keccak256([]byte(args.DOID))
+	message := crypto.Keccak256((append([]byte(args.DOID), args.Owner...)))
 	prv, err := crypto.HexToECDSA(args.Prv.String())
 	if err != nil {
 		return "", errors.New("invalid prv" + err.Error())
 	}
-	sig, err := crypto.Sign(nameHash, prv)
+	sig, err := crypto.Sign(message, prv)
 	if err != nil {
 		return "", errors.New(err.Error())
 	}
