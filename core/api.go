@@ -70,6 +70,7 @@ func newRpcTransaction(in types.Tx) *RpcTransaction{
 		result.DOID = registerTx.DOID;
 		result.NameHash = registerTx.NameHash;
 		result.Owner = registerTx.Owner;
+		result.From = registerTx.From;
 		result.Type = types.TxTypeRegister;
 	}
 
