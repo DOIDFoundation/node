@@ -78,18 +78,27 @@ func (d *discovery) pubsubDiscover() {
 
 	go pubsubMessageLoop(ctx, topic, d.host.ID(), peerFound, logger)
 
-	ticker := time.NewTicker(time.Second * 15)
+	duration := time.Second
+	ticker := time.NewTicker(duration)
 	defer ticker.Stop()
 
 	for {
-		if len(topic.ListPeers()) != 0 {
-			logger.Debug("no peers in topic, wait")
+		if len(topic.ListPeers()) == 0 {
+			if duration != time.Second {
+				duration = time.Second
+				ticker.Reset(duration)
+			}
+			logger.Debug("no peer in topic, wait")
 		} else if bz, err := rlp.EncodeToBytes(&state{Height: d.chain.LatestBlock().Header.Height.Uint64(), Td: new(big.Int).Set(d.chain.GetTd())}); err != nil {
 			logger.Error("failed to encode peer state", "err", err)
 		} else if err = topic.Publish(ctx, bz); err != nil {
 			logger.Error("failed to publish peer state", "err", err)
 		} else {
-			break
+			if duration != time.Minute {
+				duration = time.Minute
+				ticker.Reset(duration)
+			}
+			logger.Debug("publish our state")
 		}
 
 		select {
@@ -121,6 +130,7 @@ func (n *Network) notifyPeerFoundEvent() {
 			n.Logger.Debug("failed to create stream", "err", err, "peer", pi)
 			continue
 		}
+		n.Logger.Debug("connected with peer", "peer", pi)
 		n.stateHandler(stream)
 		stream.Close()
 	}
