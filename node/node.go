@@ -83,11 +83,6 @@ func (n *Node) OnStart() error {
 	if err := n.mempool.Start(); err != nil {
 		return err
 	}
-	if n.consensus != nil {
-		if err := n.consensus.Start(); err != nil {
-			return err
-		}
-	}
 	if err := n.network.Start(); err != nil {
 		return err
 	}

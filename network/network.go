@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 
 	"github.com/DOIDFoundation/node/core"
@@ -32,8 +33,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// ------------------------------------------------------------------------------
-var peerPool = make(map[string]peer.AddrInfo)
 var ctx = context.Background()
 var peerNotifier = make(chan peer.AddrInfo)
 
@@ -52,10 +51,6 @@ type Network struct {
 	peerPool      map[string]peer.AddrInfo
 }
 
-// Option sets a parameter for the network.
-type Option func(*Network)
-
-// NewNetwork returns a new, ready to go, CometBFT Node.
 func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	network := &Network{
 		blockChain: chain,
@@ -246,8 +241,10 @@ func (n *Network) unregisterEventHandlers() {
 }
 
 func (n *Network) registerEventHandlers() {
+	var once sync.Once
 	eventPeerState.Subscribe(n.String(), func(peer peer.ID) {
 		peerState := getPeerState(n.host.Peerstore(), peer)
+		n.Logger.Debug("got peer state", "peer", peer, "state", peerState)
 		if peerState != nil {
 			switch peerState.Td.Cmp(n.blockChain.GetTd()) {
 			case -1: // we are high
@@ -261,6 +258,13 @@ func (n *Network) registerEventHandlers() {
 			case 0:
 			case 1: // network is high
 				n.startSync()
+			}
+			// Send a sync finished event only once for the first time when a
+			// peer connected but we do not need to sync
+			if n.sync == nil || !n.sync.IsRunning() {
+				once.Do(func() {
+					events.SyncFinished.Send(struct{}{})
+				})
 			}
 		}
 	})
