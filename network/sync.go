@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/DOIDFoundation/node/core"
@@ -24,6 +25,8 @@ type syncService struct {
 	host  host.Host
 	chain *core.BlockChain
 	hc    *core.HeaderChain
+	abort chan struct{}
+	wg    sync.WaitGroup
 }
 
 func newSyncService(logger log.Logger, id peer.ID, h host.Host, chain *core.BlockChain) *syncService {
@@ -33,11 +36,15 @@ func newSyncService(logger log.Logger, id peer.ID, h host.Host, chain *core.Bloc
 }
 
 func (s *syncService) OnStart() error {
+	s.wg.Add(1)
+	s.abort = make(chan struct{})
 	go s.sync()
 	return nil
 }
 
 func (s *syncService) OnStop() {
+	close(s.abort)
+	s.wg.Wait()
 }
 
 func (s *syncService) dropPeer() {
@@ -47,16 +54,17 @@ func (s *syncService) dropPeer() {
 }
 
 func (s *syncService) sync() {
+	defer s.wg.Done()
 	s.doSync()
 	events.SyncFinished.Send(struct{}{})
 }
 
-func (s *syncService) doSync() {
+func (s *syncService) doSync() bool {
 	stream, err := s.host.NewStream(ctx, s.id, protocol.ID(ProtocolGetBlocks))
 	if err != nil {
 		s.Logger.Error("failed to create stream", "err", err)
 		s.dropPeer()
-		return
+		return false
 	}
 	defer stream.Close()
 	localHeight := s.chain.LatestBlock().Header.Height
@@ -64,7 +72,7 @@ func (s *syncService) doSync() {
 	if v == nil {
 		s.Logger.Error("failed to get peer version")
 		s.dropPeer()
-		return
+		return false
 	}
 	remoteHeight := v.Height
 	ancestorHeight := uint64(0)
@@ -76,7 +84,7 @@ func (s *syncService) doSync() {
 		if err != nil {
 			s.Logger.Info("failed to get block", "err", err)
 			s.dropPeer()
-			return
+			return false
 		}
 		block := blocks[0]
 		if err := s.chain.ApplyBlock(block); err != nil {
@@ -86,11 +94,11 @@ func (s *syncService) doSync() {
 			} else {
 				s.Logger.Info("failed to apply block", "err", err, "header", block.Header, "hash", block.Hash())
 				s.dropPeer()
-				return
+				return false
 			}
 		} else if check >= remoteHeight {
 			// only one block behind, no more to sync
-			return
+			return true
 		} else {
 			// current head is ancestor
 			ancestorHeight = check
@@ -101,12 +109,18 @@ func (s *syncService) doSync() {
 	if ancestorHeight == 0 {
 		s.Logger.Info("failed to find ancestor")
 		s.dropPeer()
-		return
+		return false
 	}
 	// now start batch sync after ancestor
 	start := ancestorHeight + 1
 	s.Logger.Info("start sync", "from", start, "to", remoteHeight)
 	for start <= remoteHeight {
+		select {
+		case <-s.abort:
+			s.Logger.Info("abort sync")
+			return false
+		default:
+		}
 		count := remoteHeight - start + 1
 		if count > 16 {
 			count = 16
@@ -115,13 +129,13 @@ func (s *syncService) doSync() {
 		if err != nil {
 			s.Logger.Info("can not get blocks", "from", start, "count", count, "err", err)
 			s.dropPeer()
-			return
+			return false
 		}
 		// add to header chain until we have enough blocks
 		if err := s.hc.AppendBlocks(blocks); err != nil {
 			s.Logger.Info("can not append blocks", "from", start, "count", count, "err", err)
 			s.dropPeer()
-			return
+			return false
 		}
 		start += 16
 	}
@@ -130,6 +144,7 @@ func (s *syncService) doSync() {
 		s.Logger.Info("can not apply header chain", "from", start, "err", err)
 		s.dropPeer()
 	}
+	return true
 }
 
 func (s *syncService) getBlocks(stream network.Stream, height uint64, count uint64) ([]*types.Block, error) {
