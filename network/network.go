@@ -198,10 +198,14 @@ func (n *Network) OnStop() {
 }
 
 func (n *Network) startSync() {
+	if !n.syncing.CompareAndSwap(false, true) {
+		n.Logger.Debug("not starting sync", "msg", "already started")
+		return
+	}
 	// find a best peer with most total difficulty
 	var best *state
 	var bestId peer.ID
-	for _, id := range n.host.Peerstore().Peers() {
+	for id := range peersWithState {
 		peerState := getPeerState(n.host.Peerstore(), id)
 		if best == nil || (peerState != nil && peerState.Td.Cmp(best.Td) > 0) {
 			best = peerState
@@ -210,10 +214,7 @@ func (n *Network) startSync() {
 	}
 	if best == nil || best.Td.Cmp(n.blockChain.GetTd()) <= 0 {
 		n.Logger.Debug("not starting sync", "msg", "no better network td")
-		return
-	}
-	if !n.syncing.CompareAndSwap(false, true) {
-		n.Logger.Debug("not starting sync", "msg", "already started")
+		n.syncing.Store(false)
 		return
 	}
 	n.Logger.Info("start syncing")
