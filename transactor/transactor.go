@@ -2,9 +2,14 @@ package transactor
 
 import (
 	"github.com/DOIDFoundation/node/types"
-	"github.com/DOIDFoundation/node/types/encodedtx"
+	"github.com/DOIDFoundation/node/types/tx"
 	"github.com/cosmos/iavl"
 )
+
+type Transactor interface {
+	Validate(tree *iavl.ImmutableTree, t tx.TypedTx) error
+	Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, error)
+}
 
 type resultCode = uint8
 
@@ -16,12 +21,10 @@ const (
 	resLater               // should be retried later
 )
 
-type ApplyFunc = func(tree *iavl.MutableTree, encoded *encodedtx.EncodedTx) (resultCode, error)
+var transactors = map[tx.Type]Transactor{}
 
-var appliers = map[types.TxType]ApplyFunc{}
-
-func registerApplyFunc(t types.TxType, f ApplyFunc) {
-	appliers[t] = f
+func registerTransactor(t tx.Type, f Transactor) {
+	transactors[t] = f
 }
 
 type rejectedTx struct {
@@ -39,6 +42,11 @@ type ExecutionResult struct {
 	Pending     []int          `json:"pending,omitempty"`
 }
 
+func ValidateTx(tree *iavl.ImmutableTree, t tx.TypedTx) error {
+	transactor := transactors[t.Type()]
+	return transactor.Validate(tree, t)
+}
+
 func ApplyTxs(tree *iavl.MutableTree, txs types.Txs) (*ExecutionResult, error) {
 	var (
 		rejectedTxs []*rejectedTx
@@ -47,17 +55,17 @@ func ApplyTxs(tree *iavl.MutableTree, txs types.Txs) (*ExecutionResult, error) {
 		receipts    = make(types.Receipts, 0)
 	)
 	for i, t := range txs {
-		encoded, err := encodedtx.FromTx(t)
+		decoded, err := tx.Decode(t)
 		if err != nil {
 			rejectedTxs = append(rejectedTxs, &rejectedTx{i, err.Error()})
 			continue
 		}
-		applier := appliers[encoded.Type]
-		if applier == nil {
+		transactor := transactors[decoded.Type()]
+		if transactor == nil {
 			rejectedTxs = append(rejectedTxs, &rejectedTx{i, "unknown transaction type"})
 			continue
 		}
-		code, err := applier(tree, encoded)
+		code, err := transactor.Apply(tree, decoded)
 		switch code {
 		case resRejected:
 			rejectedTxs = append(rejectedTxs, &rejectedTx{i, err.Error()})

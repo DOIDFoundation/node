@@ -21,7 +21,7 @@ func newState(t *testing.T) *iavl.MutableTree {
 	return state
 }
 
-func newTx(t *testing.T, val types.TypedTx) types.Tx {
+func newTx(t *testing.T, val tx.TypedTx) types.Tx {
 	ret, err := tx.NewTx(val)
 	require.NoError(t, err)
 	return ret

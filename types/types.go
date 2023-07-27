@@ -14,10 +14,9 @@ type (
 	Address    = cmttypes.Address
 	BlockNonce = ethtypes.BlockNonce
 	HexBytes   = cmtbytes.HexBytes
-	Tx         = cmttypes.Tx
+	Tx         = cmttypes.Tx // Just bytes
 	TxHash     = cmttypes.TxKey
-	Txs        = cmttypes.Txs
-	TxType     = uint8
+	Txs        = cmttypes.Txs // Array of Tx
 )
 
 func HexToAddress(s string) Address {
@@ -49,15 +48,6 @@ func TxDifference(a, b Txs) (dropped, kept Txs) {
 	}
 
 	return dropped, kept
-}
-
-// Transaction types, append only.
-const (
-	TxTypeRegister TxType = iota
-)
-
-type TypedTx interface {
-	Type() TxType
 }
 
 type Receipt struct {

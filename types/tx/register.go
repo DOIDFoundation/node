@@ -10,6 +10,6 @@ type Register struct {
 	Signature types.Hash    `json:"signature"`
 }
 
-func (r *Register) Type() types.TxType {
-	return types.TxTypeRegister
+func (r *Register) Type() Type {
+	return TypeRegister
 }

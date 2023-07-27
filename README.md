@@ -26,15 +26,20 @@ Current available flags:
 
 ```
 Flags:
-      --db.engine string        Backing database implementation to use ('memdb' or 'goleveldb') (default "goleveldb")
-  -h, --help                    help for start
-  -m, --mine.enabled            Enable mining
-      --mine.threads uint       Number of threads to start mining, 0 indicates number of logical CPUs
-      --p2p.addr string         Libp2p listen address (default "/ip4/127.0.0.1/tcp/26667")
-      --p2p.key string          Private key to generate libp2p peer identity
-      --p2p.keyfile string      Private key file to generate libp2p peer identity (default "p2p.key")
-  -r, --p2p.rendezvous string   Libp2p rendezvous string used for peer discovery (default "doidnode")
-      --rpc.addr string         RPC listen address (default "127.0.0.1:26657")
+      --db.engine string         Backing database implementation to use ('memdb' or 'goleveldb') (default "goleveldb")
+  -h, --help                     help for start
+  -m, --mine.enabled             Enable mining
+      --mine.miner string        Miner address to be included in mined blocks
+      --mine.threads uint        Number of threads to start mining, 0 indicates number of logical CPUs
+      --p2p.addr string          Libp2p listen address (default "/ip4/127.0.0.1/tcp/26667")
+      --p2p.key string           Private key to generate libp2p peer identity
+      --p2p.keyfile string       Private key file to generate libp2p peer identity (default "p2p.key")
+  -r, --p2p.rendezvous string    Libp2p rendezvous string used for peer discovery (default "doidnode")
+      --rpc.http.addr string     RPC over HTTP listen address (default "127.0.0.1:8556")
+      --rpc.http.enabled         Enable RPC over http
+      --rpc.ws.addr string       RPC over websocket listen address (default "127.0.0.1:8557")
+      --rpc.ws.enabled           Enable RPC over websocket
+      --rpc.ws.origins strings   Origins from which to accept websockets requests (default [*])
 ```
 
 ## Test
@@ -59,7 +64,7 @@ address : f39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 request
 
 ````
-curl -v -s 'localhost:8556' -H "Content-Type: application/json" -X POST --data '{"jsonrpc":"2.0","id":1,"method":"doid_sendTransaction","params":[{"DOID":"test","Owner":"f39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "Signature": "506f3bd07f7015be3495861d5548bca597f3a35ff81df122d0b08ebbbb2aefa52f9aa5bd3b38824d18cd8cce73c35a88518222d7f75f0b6360039f72081701ab01", "From": "f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}]}'```
+curl -v -s 'localhost:8556' -H "Content-Type: application/json" -X POST --data '{"jsonrpc":"2.0","id":1,"method":"doid_sendTransaction","params":[{"type":"register","data":{"DOID":"test","Owner":"f39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "Signature": "506f3bd07f7015be3495861d5548bca597f3a35ff81df122d0b08ebbbb2aefa52f9aa5bd3b38824d18cd8cce73c35a88518222d7f75f0b6360039f72081701ab01", "From": "f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}}]}'
 ````
 
 response
