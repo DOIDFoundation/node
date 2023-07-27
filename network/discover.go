@@ -14,6 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
@@ -124,6 +125,14 @@ func (d *discovery) HandlePeerFound(pi peer.AddrInfo) {
 func (n *Network) notifyPeerFoundEvent() {
 	for {
 		pi := <-peerNotifier
+		switch n.host.Network().Connectedness(pi.ID) {
+		case network.Connected:
+			n.Logger.Debug("already connected", "peer", pi)
+			continue
+		case network.CannotConnect:
+			n.Logger.Debug("not connectable", "peer", pi)
+			continue
+		}
 
 		stream, err := n.host.NewStream(ctx, pi.ID, protocol.ID(ProtocolState))
 		if err != nil {
@@ -159,6 +168,8 @@ func (d *discovery) setupDiscover() {
 	}
 	wg.Wait()
 
+	d.Logger.Info("Discovering p2p network")
+
 	if err := d.mdns.Start(); err != nil {
 		d.Logger.Error("failed to start mdns discovery", "err", err)
 	}
@@ -167,7 +178,7 @@ func (d *discovery) setupDiscover() {
 
 	// Bootstrap the DHT. In the default configuration, this spawns a Background
 	// thread that will refresh the peer table every five minutes.
-	d.Logger.Debug("Bootstrapping the DHT")
+	d.Logger.Debug("Bootstrapping DHT")
 	if err := d.dht.Bootstrap(ctx); err != nil {
 		d.Logger.Error("failed to bootstrap dht", "err", err)
 		return
