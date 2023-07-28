@@ -17,9 +17,6 @@ func (r *Register) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
 	if len(args.Owner) == 0 {
 		return errors.New("missing args: Owner")
 	}
-	if args.From == nil {
-		return errors.New("missing args: From")
-	}
 	if args.Signature == nil {
 		return errors.New("missing args: Signature")
 	}
@@ -38,7 +35,7 @@ func (r *Register) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
 		return errors.New("invalid args: Signature")
 	}
 	recoveredAddr := crypto.PubkeyToAddress(*recovered)
-	if !bytes.Equal(recoveredAddr.Bytes(), args.From.Bytes()) {
+	if !bytes.Equal(recoveredAddr.Bytes(), args.Owner.Bytes()) {
 		return errors.New("invalid signature")
 	}
 	return nil

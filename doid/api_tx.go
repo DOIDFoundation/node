@@ -43,7 +43,7 @@ func (api *PublicTransactionPoolAPI) SendTransaction(input json.RawMessage) (typ
 
 func (api *PublicTransactionPoolAPI) Sign(input json.RawMessage) (string, error) {
 	var args tx.Register
-	if err := json.Unmarshal(input, args); err != nil {
+	if err := json.Unmarshal(input, &args); err != nil {
 		return "", err
 	}
 	message := crypto.Keccak256((append([]byte(args.DOID), args.Owner...)))
