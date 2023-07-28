@@ -63,9 +63,9 @@ address : f39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 
 request
 
-````
+```
 curl -v -s 'localhost:8556' -H "Content-Type: application/json" -X POST --data '{"jsonrpc":"2.0","id":1,"method":"doid_sendTransaction","params":[{"type":"register","data":{"DOID":"test","Owner":"f39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "Signature": "506f3bd07f7015be3495861d5548bca597f3a35ff81df122d0b08ebbbb2aefa52f9aa5bd3b38824d18cd8cce73c35a88518222d7f75f0b6360039f72081701ab01", "From": "f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}}]}'
-````
+```
 
 response
 
@@ -82,7 +82,7 @@ sig = crypto.sign(bytes(doidname) + bytes(owner), privatekey)
 request
 
 ```
-curl -s 'localhost:8556' -H "Content-Type: application/json" -X POST --data '{"jsonrpc":"2.0","id":1,"method":"doid_sign","params":[{"DOID":"test","Owner":"f39Fd6e51aad88F6F4ce6aB8827279cffFb92266","From":"f39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "private":"ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}]}'
+curl -s 'localhost:8556' -H "Content-Type: application/json" -X POST --data '{"jsonrpc":"2.0","id":1,"method":"doid_sign","params":[{"DOID":"test","Owner":"f39Fd6e51aad88F6F4ce6aB8827279cffFb92266","prv":"ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}]}'
 ```
 
 response
