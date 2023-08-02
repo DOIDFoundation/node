@@ -33,14 +33,6 @@ type SqliteStore struct {
 	dbpath string
 }
 
-type DBStore interface {
-	Init(path string) bool
-	AddMiner(hash types.Hash, height uint64, miner types.Address) bool
-	RemoveMinerByHash() bool
-	QueryBlockByMiner(miner types.Address) []uint64
-	CountBlockByMiner(miner types.Address) int
-}
-
 func (s *SqliteStore) Init(sqlite3DbPath string) bool {
 	s.Logger.Info("SQLITE Init")
 	// homeDir := viper.GetString(flags.Home)
