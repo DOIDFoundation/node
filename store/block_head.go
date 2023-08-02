@@ -32,6 +32,12 @@ func (bs *BlockStore) DeleteHashByHeight(height uint64) {
 		bs.Logger.Error("failed to delete header hash by height", "err", err, "height", height)
 		panic(err)
 	}
+
+	flag := bs.sqlitedb.RemoveMinerByHeight(height)
+	if flag == false {
+		bs.Logger.Error("Failed to remove miner")
+		panic("Failed to remove miner")
+	}
 }
 
 func (bs *BlockStore) DeleteHashByHeightFrom(height uint64) {
