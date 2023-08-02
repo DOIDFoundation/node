@@ -21,7 +21,7 @@ func init() {
 	StartCmd.Flags().String(flags.RPC_WsAddr, "127.0.0.1:8557", "RPC over websocket listen address")
 	StartCmd.Flags().StringSlice(flags.RPC_WsOrigins, []string{"*"}, "Origins from which to accept websockets requests")
 	StartCmd.Flags().StringSlice(flags.P2P_Addr, []string{"/ip4/0.0.0.0/tcp/26667", "/ip4/0.0.0.0/udp/26667/quic"}, "Libp2p listen address")
-	StartCmd.Flags().StringP(flags.P2P_Rendezvous, "r", "doidnode", "Libp2p rendezvous string used for peer discovery")
+	StartCmd.Flags().StringP(flags.P2P_Rendezvous, "r", "doidnode", "Libp2p rendezvous string used for peer discovery, do not change this unless you need a private network")
 	StartCmd.Flags().String(flags.P2P_Key, "", "Private key to generate libp2p peer identity")
 	StartCmd.Flags().String(flags.P2P_KeyFile, "p2p.key", "Private key file to generate libp2p peer identity")
 }

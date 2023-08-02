@@ -158,14 +158,16 @@ func (n *Network) notifyPeerFoundEvent() {
 			continue
 		}
 
-		stream, err := n.host.NewStream(ctx, pi.ID, protocol.ID(ProtocolState))
-		if err != nil {
-			n.Logger.Debug("failed to create stream", "err", err, "peer", pi)
-			continue
-		}
-		n.Logger.Debug("stream established", "peer", pi)
-		n.stateHandler(stream)
-		stream.Close()
+		go func() {
+			stream, err := n.host.NewStream(ctx, pi.ID, protocol.ID(ProtocolState))
+			if err != nil {
+				n.Logger.Debug("failed to create stream", "err", err, "peer", pi)
+				return
+			}
+			n.Logger.Debug("stream established", "peer", pi)
+			n.stateHandler(stream)
+			stream.Close()
+		}()
 	}
 }
 

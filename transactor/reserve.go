@@ -10,23 +10,20 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-type Register struct{}
+var admin = types.HexToAddress("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
 
-var classANameLength int = 2
-var classBNameLength int = 4
-var classCNameLength int = 6
+type Reserve struct{}
 
-func (r *Register) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
-	args := t.(*tx.Register)
-	if len(args.Owner) == 0 {
+func (r *Reserve) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
+	args := t.(*tx.Reserve)
+	if len(args.Admin) == 0 {
 		return errors.New("missing args: Owner")
 	}
 	if args.Signature == nil {
 		return errors.New("missing args: Signature")
 	}
-
-	if !ValidateDoidName(args.DOID, classCNameLength) {
-		return errors.New("invalid doid name")
+	if !bytes.Equal(args.Admin.Bytes(), admin.Bytes()) {
+		return errors.New("invalid admin address")
 	}
 
 	existsOwner, err := state.Get(types.DOIDHash(args.DOID))
@@ -37,24 +34,24 @@ func (r *Register) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
 		return errors.New("doidname has already been registered")
 	}
 
-	message := crypto.Keccak256(append([]byte(args.DOID), args.Owner...))
+	message := crypto.Keccak256(append([]byte(args.DOID), args.Admin...))
 	recovered, err := crypto.SigToPub(message, args.Signature)
 	if err != nil {
 		return errors.New("invalid args: Signature")
 	}
 	recoveredAddr := crypto.PubkeyToAddress(*recovered)
-	if !bytes.Equal(recoveredAddr.Bytes(), args.Owner.Bytes()) {
+	if !bytes.Equal(recoveredAddr.Bytes(), args.Admin.Bytes()) {
 		return errors.New("invalid signature")
 	}
 	return nil
 }
 
-func (r *Register) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, error) {
-	register, ok := t.(*tx.Register)
+func (r *Reserve) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, error) {
+	reserve, ok := t.(*tx.Reserve)
 	if !ok {
 		return resRejected, errors.New("bad tx type")
 	}
-	key := types.DOIDHash(register.DOID)
+	key := types.DOIDHash(reserve.DOID)
 	has, err := tree.Has(key)
 	if err != nil {
 		return resRejected, err
@@ -64,14 +61,9 @@ func (r *Register) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, erro
 		return resRejected, errors.New("name exists")
 	}
 
-	_, err = tree.Set(key, register.Owner)
+	_, err = tree.Set(key, reserve.Owner)
 	if err != nil {
 		return resRejected, err
 	}
 	return resSuccess, nil
-}
-
-func init() {
-	registerTransactor(tx.TypeRegister, &Register{})
-	registerTransactor(tx.TypeReserve, &Reserve{})
 }
