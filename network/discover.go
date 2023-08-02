@@ -219,9 +219,9 @@ func (d *discovery) setupDiscover() {
 	// start discovery after bootstrap
 	d.Logger.Info("Discovering p2p network")
 
-	// if err := d.mdns.Start(); err != nil {
-	// 	d.Logger.Error("failed to start mdns discovery", "err", err)
-	// }
+	if err := d.mdns.Start(); err != nil {
+		d.Logger.Error("failed to start mdns discovery", "err", err)
+	}
 
 	d.wg.Add(1)
 	go d.pubsubDiscover()
