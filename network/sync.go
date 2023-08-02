@@ -1,6 +1,7 @@
 package network
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -61,6 +62,8 @@ func (s *syncService) sync() {
 }
 
 func (s *syncService) doSync() bool {
+	ctx, cancel := context.WithTimeout(ctx, time.Second*15) // @todo add a config/flag for this timeout
+	defer cancel()
 	stream, err := s.host.NewStream(ctx, s.id, protocol.ID(ProtocolGetBlocks))
 	if err != nil {
 		s.Logger.Error("failed to create stream", "err", err)
@@ -149,6 +152,7 @@ func (s *syncService) doSync() bool {
 }
 
 func (s *syncService) getBlocks(stream network.Stream, height uint64, count uint64) ([]*types.Block, error) {
+	stream.SetDeadline(time.Now().Add(time.Second * 15)) // @todo add config/flag for this timeout
 	if err := rlp.Encode(stream, requestBlocks{new(big.Int).SetUint64(height), new(big.Int).SetUint64(count)}); err != nil {
 		return nil, err
 	}

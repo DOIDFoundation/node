@@ -290,6 +290,12 @@ func (bs *BlockStore) DeleteHeaderHeight(hash types.Hash) {
 		bs.Logger.Error("Failed to delete hash to height mapping", "err", err)
 		panic(err)
 	}
+
+	flag := bs.sqlitedb.RemoveMinerByHash(hash)
+	if flag == false {
+		bs.Logger.Error("Failed to remove miner")
+		panic("Failed to remove miner")
+	}
 }
 
 // ReadTd retrieves a block's total difficulty corresponding to the hash.
