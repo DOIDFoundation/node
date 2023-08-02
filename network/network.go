@@ -243,13 +243,15 @@ func (n *Network) registerEventHandlers() {
 		if peerState != nil {
 			switch peerState.Td.Cmp(n.blockChain.GetTd()) {
 			case -1: // we are high
-				stream, err := n.host.NewStream(ctx, peer, protocol.ID(ProtocolState))
-				if err != nil {
-					n.Logger.Debug("failed to create stream", "err", err, "peer", peer)
-					break
-				}
-				stream.CloseRead()
-				n.stateHandler(stream)
+				go func() {
+					stream, err := n.host.NewStream(ctx, peer, protocol.ID(ProtocolState))
+					if err != nil {
+						n.Logger.Debug("failed to create stream", "err", err, "peer", peer)
+						return
+					}
+					stream.CloseRead()
+					n.stateHandler(stream)
+				}()
 			case 0:
 			case 1: // network is high
 				n.startSync()
