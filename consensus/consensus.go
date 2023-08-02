@@ -26,6 +26,7 @@ var two256 = new(big.Int).Exp(big.NewInt(2), big.NewInt(256), big.NewInt(0))
 type Consensus struct {
 	service.BaseService
 	wg       sync.WaitGroup
+	abort    chan struct{}
 	miner    types.Address
 	taskCh   chan struct{}
 	resultCh chan *types.Block
@@ -55,6 +56,7 @@ func New(chain *core.BlockChain, txpool *mempool.Mempool, logger log.Logger) *Co
 }
 
 func (c *Consensus) OnStart() error {
+	c.abort = make(chan struct{})
 	c.wg.Add(3)
 	go c.mainLoop()
 	go c.resultLoop()
@@ -62,16 +64,17 @@ func (c *Consensus) OnStart() error {
 	return nil
 }
 
-func (c *Consensus) OnReset() error {
-	c.Wait()
-	return nil
-}
-
-func (c *Consensus) Wait() {
+func (c *Consensus) OnStop() {
+	close(c.abort)
 	c.wg.Wait()
 }
 
+func (c *Consensus) OnReset() error {
+	return nil
+}
+
 func (c *Consensus) registerEventHandlers() {
+	var mu sync.Mutex
 	events.NewChainHead.Subscribe(c.String(), func(data *types.Block) {
 		if c.IsRunning() {
 			// chain head changed, now commit a new work.
@@ -81,13 +84,16 @@ func (c *Consensus) registerEventHandlers() {
 	events.SyncStarted.Subscribe(c.String(), func(data struct{}) {
 		// Enter syncing, now stop mining.
 		if c.IsRunning() {
+			mu.Lock()
+			defer mu.Unlock()
 			c.Stop()
 			c.Reset()
 		}
 	})
 	events.SyncFinished.Subscribe(c.String(), func(data struct{}) {
 		// Sync finished, now start mining.
-		c.Wait()
+		mu.Lock()
+		defer mu.Unlock()
 		c.Start()
 	})
 }
@@ -107,7 +113,7 @@ func (c *Consensus) mainLoop() {
 			if err := c.startMine(stopCh); err != nil {
 				c.Logger.Error("block sealing failed", "err", err)
 			}
-		case <-c.Quit():
+		case <-c.abort:
 			if stopCh != nil {
 				close(stopCh)
 				stopCh = nil
@@ -154,9 +160,6 @@ func (c *Consensus) startMine(stop chan struct{}) error {
 			default:
 				c.Logger.Info("result is not read by miner", "header", result.Header, "hash", result.Hash())
 			}
-			close(abort)
-		case <-c.Quit():
-			// Outside abort, stop all miner threads
 			close(abort)
 		}
 		// Wait for all miners to terminate
@@ -226,7 +229,7 @@ func (c *Consensus) resultLoop() {
 			}
 			c.commitWork()
 
-		case <-c.Quit():
+		case <-c.abort:
 			return
 		}
 	}
@@ -245,7 +248,7 @@ func (c *Consensus) newWorkLoop() {
 		case <-timer.C:
 			c.commitWork()
 			timer.Reset(recommit)
-		case <-c.Quit():
+		case <-c.abort:
 			return
 		}
 	}
@@ -282,7 +285,7 @@ func (c *Consensus) commitWork() {
 
 	select {
 	case c.taskCh <- struct{}{}:
-	case <-c.Quit():
+	case <-c.abort:
 		c.Logger.Info("exiting, work not committed")
 		return
 	}

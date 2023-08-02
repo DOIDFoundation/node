@@ -117,13 +117,22 @@ func (bc *BlockChain) Close() {
 }
 
 func (bc *BlockChain) registerEventHandlers() {
-	events.NewNetworkBlock.Subscribe("blockchain", func(block *types.Block) {
+	events.NewNetworkBlock.Subscribe("blockchain", func(data events.BlockWithTd) {
+		block := data.Block
 		if bytes.Equal(bc.blockStore.ReadHashByHeight(block.Header.Height.Uint64()), block.Hash()) {
 			bc.Logger.Debug("block from network already known", "block", block.Hash(), "header", block.Header)
 			return
 		}
-		if err := bc.ApplyBlock(block); err != nil {
-			bc.Logger.Error("bad block from network", "err", err, "block", block.Hash(), "header", block.Header)
+		if block.Header.Height.Uint64() == bc.latestBlock.Header.Height.Uint64()+1 {
+			if err := bc.ApplyBlock(block); err == nil {
+				return
+			} else if !errors.Is(err, types.ErrNotContiguous) {
+				bc.Logger.Info("discard block from network", "err", err, "block", block.Hash(), "header", block.Header)
+				return
+			}
+		}
+		if data.Td.Cmp(bc.latestTD) > 0 {
+			bc.Logger.Info("better network td, maybe a fork", "block", block.Hash(), "header", block.Header, "td", data.Td)
 			events.ForkDetected.Send(struct{}{})
 		}
 	})

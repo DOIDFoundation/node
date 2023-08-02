@@ -277,7 +277,7 @@ func (n *Network) registerEventHandlers() {
 			n.Logger.Info("not broadcasting, new block topic not joined")
 			return
 		}
-		b, err := rlp.EncodeToBytes(newBlock{Block: data, Td: n.blockChain.GetTd()})
+		b, err := rlp.EncodeToBytes(events.BlockWithTd{Block: data, Td: n.blockChain.GetTd()})
 		if err != nil {
 			n.Logger.Error("failed to encode block for broadcasting", "err", err)
 			return
