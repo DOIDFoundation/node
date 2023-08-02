@@ -20,20 +20,19 @@ import (
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
-	"github.com/libp2p/go-libp2p-peerstore/pstoreds"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/core/routing"
+	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoreds"
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
-	"github.com/multiformats/go-multiaddr"
 	"github.com/spf13/viper"
 )
 
-var ctx = context.Background()
+var ctx, cancelCtx = context.WithCancel(context.Background())
 var peerNotifier = make(chan peer.AddrInfo)
 
 type Network struct {
@@ -59,12 +58,6 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 		peerPool:      make(map[string]peer.AddrInfo),
 	}
 	network.BaseService = *service.NewBaseService(logger.With("module", "network"), "Network", network)
-
-	addr, err := multiaddr.NewMultiaddr(viper.GetString(flags.P2P_Addr))
-	if err != nil {
-		network.Logger.Error("Failed to parse p2p.addr", "err", err, "addr", viper.GetString(flags.P2P_Addr))
-		return nil
-	}
 
 	dataDir := filepath.Join(viper.GetString(flags.Home), "data")
 
@@ -136,7 +129,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	var idht *dual.DHT
 	network.host, err = libp2p.New(
 		libp2p.Identity(network.loadPrivateKey()),
-		libp2p.ListenAddrs(addr),
+		libp2p.ListenAddrStrings(viper.GetStringSlice(flags.P2P_Addr)...),
 		libp2p.UserAgent(version.VersionWithCommit()),
 		libp2p.ResourceManager(rm),
 		libp2p.Security(noise.ID, noise.New),
@@ -191,6 +184,7 @@ func (n *Network) OnStart() error {
 
 // OnStop stops the Network. It implements service.Service.
 func (n *Network) OnStop() {
+	cancelCtx()
 	n.stopSync()
 	n.discovery.Stop()
 	n.host.Close()
@@ -205,7 +199,7 @@ func (n *Network) startSync() {
 	// find a best peer with most total difficulty
 	var best *state
 	var bestId peer.ID
-	for id := range peersWithState {
+	for id := range peerHasState {
 		peerState := getPeerState(n.host.Peerstore(), id)
 		if best == nil || (peerState != nil && peerState.Td.Cmp(best.Td) > 0) {
 			best = peerState
@@ -249,13 +243,15 @@ func (n *Network) registerEventHandlers() {
 		if peerState != nil {
 			switch peerState.Td.Cmp(n.blockChain.GetTd()) {
 			case -1: // we are high
-				stream, err := n.host.NewStream(ctx, peer, protocol.ID(ProtocolState))
-				if err != nil {
-					n.Logger.Debug("failed to create stream", "err", err, "peer", peer)
-					break
-				}
-				stream.CloseRead()
-				n.stateHandler(stream)
+				go func() {
+					stream, err := n.host.NewStream(ctx, peer, protocol.ID(ProtocolState))
+					if err != nil {
+						n.Logger.Debug("failed to create stream", "err", err, "peer", peer)
+						return
+					}
+					stream.CloseRead()
+					n.stateHandler(stream)
+				}()
 			case 0:
 			case 1: // network is high
 				n.startSync()
