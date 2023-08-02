@@ -49,7 +49,7 @@ func getPeerState(s peerstore.Peerstore, id peer.ID) *state {
 	return peerState
 }
 
-var peersWithState = make(map[peer.ID]bool)
+var peerHasState = make(map[peer.ID]bool)
 
 func updatePeerState(peerStore peerstore.Peerstore, peer peer.ID, peerState *state) (updated bool, err error) {
 	if oldState := getPeerState(peerStore, peer); oldState != nil && oldState.Td.Cmp(peerState.Td) == 0 {
@@ -59,7 +59,7 @@ func updatePeerState(peerStore peerstore.Peerstore, peer peer.ID, peerState *sta
 	} else if err = peerStore.Put(peer, metaState, bz); err != nil {
 		return false, err
 	}
-	peersWithState[peer] = true
+	peerHasState[peer] = true
 	return true, nil
 }
 
