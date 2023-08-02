@@ -24,7 +24,7 @@ func TestSqliteStore(t *testing.T) {
 
 	s := &store.SqliteStore{Logger: log.NewTMLogger(log.NewSyncWriter(os.Stdout))}
 	require.NotNil(t, s)
-	sqlite3DbPath := "/Users/zzz/doid_node_data/sqlite3.db"
+	sqlite3DbPath := "./doid_node_data/sqlite3.db"
 	flag := s.Init(sqlite3DbPath)
 
 	require.True(t, flag)
