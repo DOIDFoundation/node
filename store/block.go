@@ -14,11 +14,132 @@ import (
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/cometbft/cometbft/libs/log"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+
+	"database/sql"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type BlockStore struct {
 	log.Logger
-	db cmtdb.DB
+	db       cmtdb.DB
+	sqlitedb *SqliteStore
+}
+
+type SqliteStore struct {
+	log.Logger
+	Db     *sql.DB
+	dbpath string
+}
+
+type DBStore interface {
+	Init(path string) bool
+	AddMiner(hash types.Hash, height uint64, miner types.Address) bool
+	RemoveMinerByHash() bool
+	QueryBlockByMiner(miner types.Address) []uint64
+	CountBlockByMiner(miner types.Address) int
+}
+
+func (s *SqliteStore) Init(sqlite3DbPath string) bool {
+	s.Logger.Info("SQLITE Init")
+	// homeDir := viper.GetString(flags.Home)
+	// sqlite3DbPath := filepath.Join(homeDir, "data", "sqlite3.db")
+	sqlitedb, err := sql.Open("sqlite3", sqlite3DbPath)
+
+	if err != nil {
+		s.Logger.Error("SQL.OPEN", err.Error())
+		return false
+	}
+	minerTableDDL := "CREATE TABLE IF NOT EXISTS miner_block (id INTEGER PRIMARY KEY, miner_address TEXT, block_height INTEGER,block_hash TEXT)"
+	_, err = sqlitedb.Exec(minerTableDDL)
+	if err != nil {
+		s.Logger.Error("EXEC", err.Error())
+		return false
+	}
+	s.Db = sqlitedb
+	s.dbpath = sqlite3DbPath
+	return true
+}
+
+func (s *SqliteStore) AddMiner(hash types.Hash, height uint64, miner types.Address) bool {
+	var exists bool
+	err := s.Db.QueryRow("SELECT EXISTS(SELECT 1 FROM miner_block WHERE miner_address=? and block_height=?)", hexutil.Encode(miner.Bytes()), height).Scan(&exists)
+	if err != nil {
+		s.Logger.Error("AddMiner Query error:", err)
+		return false
+	}
+
+	if exists {
+		s.Logger.Info("AddMiner Record exists")
+		return true
+	} else {
+		_, err := s.Db.Exec("INSERT INTO miner_block (miner_address,block_height,block_hash) VALUES (?,?,?)", hexutil.Encode(miner.Bytes()), height, hexutil.Encode(hash.Bytes()))
+		if err != nil {
+			s.Logger.Error("AddMiner INSERT error:", err)
+			return false
+		}
+		s.Logger.Info("SQLITE AddMiner success")
+		return true
+	}
+
+}
+
+func (s *SqliteStore) RemoveMinerByHash(hash types.Hash) bool {
+	_, err := s.Db.Exec("DELETE FROM miner_block where block_hash= ?", hexutil.Encode(hash.Bytes()))
+	if err != nil {
+		s.Logger.Error("RemoveMinerByHash error:", err)
+		return false
+	}
+
+	return true
+}
+
+func (s *SqliteStore) CountBlockByMiner(miner types.Address, limit int) int {
+
+	var totalRecords int
+	err := s.Db.QueryRow("SELECT COUNT(*) FROM miner_block where miner_address=?", hexutil.Encode(miner.Bytes())).Scan(&totalRecords)
+	if err != nil {
+		s.Logger.Error("CountBlockByMiner query_count error:", err)
+		return 0
+	}
+	return totalRecords
+}
+
+func (s *SqliteStore) QueryBlockByMiner(miner types.Address, limit int, page int) []uint64 {
+
+	// var totalRecords int
+	// err := s.Db.QueryRow("SELECT COUNT(*) FROM miner_block where miner_address=?", hexutil.Encode(miner.Bytes())).Scan(&totalRecords)
+	// if err != nil {
+	// 	s.Logger.Error("QueryBlockByMiner query_count error:", err)
+	// 	return nil
+	// }
+
+	// totalPage := (totalRecords + limit - 1) / limit
+	// if page <= 0 || page > totalPage {
+	// 	s.Logger.Error("QueryBlockByMiner invalid page")
+	// 	return nil
+	// }
+
+	offset := (page - 1) * limit
+	rows, err := s.Db.Query("SELECT block_height FROM miner_block where miner_address=? order by block_height asc LIMIT ? OFFSET ?", hexutil.Encode(miner.Bytes()), limit, offset)
+	if err != nil {
+		s.Logger.Error("QueryBlockByMiner query_record error:", err)
+		return nil
+	}
+
+	var k []uint64
+	for rows.Next() {
+		var height int
+		err = rows.Scan(&height)
+		if err != nil {
+			s.Logger.Error("Scan", err)
+			return nil
+		}
+		k = append(k, uint64(height))
+	}
+	rows.Close()
+	return k
 }
 
 func NewBlockStore(logger log.Logger) (*BlockStore, error) {
@@ -27,9 +148,15 @@ func NewBlockStore(logger log.Logger) (*BlockStore, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	_sqliteDb := &SqliteStore{Logger: logger.With("module", "sqliteStore")}
+	initRet := _sqliteDb.Init(filepath.Join(homeDir, "sqlite3.db"))
+	logger.Info("sqlite_store init:", initRet)
+
 	return &BlockStore{
-		Logger: logger.With("module", "blockStore"),
-		db:     db,
+		Logger:   logger.With("module", "blockStore"),
+		db:       db,
+		sqlitedb: _sqliteDb,
 	}, nil
 }
 
@@ -99,7 +226,7 @@ func (bs *BlockStore) WriteHeader(header *types.Header) {
 		height = header.Height.Uint64()
 	)
 	bs.WriteData(headerKey(height, hash), header)
-	bs.WriteHeightByHash(hash, height)
+	bs.WriteHeightByHash(hash, height, header.Miner)
 }
 
 // ReadDataRLP retrieves the data in RLP encoding.
@@ -153,12 +280,18 @@ func (bs *BlockStore) ReadHeightByHash(hash types.Hash) *uint64 {
 }
 
 // WriteHeightByHash stores the hash->height mapping.
-func (bs *BlockStore) WriteHeightByHash(hash types.Hash, height uint64) {
+func (bs *BlockStore) WriteHeightByHash(hash types.Hash, height uint64, miner types.Address) {
 	key := headerHeightKey(hash)
 	enc := encodeBlockHeight(height)
 	if err := bs.db.Set(key, enc); err != nil {
 		bs.Logger.Error("Failed to store hash to height mapping", "err", err)
 		panic(err)
+	}
+
+	flag := bs.sqlitedb.AddMiner(hash, height, miner)
+	if flag == false {
+		bs.Logger.Error("Failed to store miner to sqlite3")
+		panic("Failed to store miner to sqlite3")
 	}
 }
 
@@ -167,6 +300,12 @@ func (bs *BlockStore) DeleteHeaderHeight(hash types.Hash) {
 	if err := bs.db.Delete(headerHeightKey(hash)); err != nil {
 		bs.Logger.Error("Failed to delete hash to height mapping", "err", err)
 		panic(err)
+	}
+
+	flag := bs.sqlitedb.RemoveMinerByHash(hash)
+	if flag == false {
+		bs.Logger.Error("Failed to remove miner")
+		panic("Failed to remove miner")
 	}
 }
 
@@ -229,4 +368,8 @@ func (bs *BlockStore) ReadReceipt(hash types.Hash) (result *types.StoredReceipt)
 func (bs *BlockStore) Close() error {
 	bs.Logger.Debug("closing block store")
 	return bs.db.Close()
+}
+
+func (bs *BlockStore) GetSqliteDB() *SqliteStore {
+	return bs.sqlitedb
 }

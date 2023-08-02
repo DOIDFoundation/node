@@ -29,3 +29,4 @@ profile.cov
 .vscode
 
 build
+*.db
