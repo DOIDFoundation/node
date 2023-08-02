@@ -3,6 +3,7 @@ package network
 import (
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 )
 
 type API struct {
@@ -10,11 +11,15 @@ type API struct {
 }
 
 type Status struct {
-	IsRunning bool `json:"is_running"`
+	PeersInTopic peer.IDSlice `json:"peersInTopic"`
+	Connections  []string     `json:"connections"`
 }
 
 func (api *API) Status() Status {
-	return Status{IsRunning: api.net.IsRunning()}
+	return Status{
+		PeersInTopic: api.net.discovery.topic.ListPeers(),
+		Connections:  api.Connections(),
+	}
 }
 
 func (api *API) PeersInStore() peer.IDSlice {
@@ -23,6 +28,14 @@ func (api *API) PeersInStore() peer.IDSlice {
 
 func (api *API) Peers() peer.IDSlice {
 	return api.net.host.Network().Peers()
+}
+
+func (api *API) Connections() (addrs []string) {
+	for _, conn := range api.net.host.Network().Conns() {
+		a := peer.AddrInfo{ID: conn.RemotePeer(), Addrs: []multiaddr.Multiaddr{conn.RemoteMultiaddr()}}
+		addrs = append(addrs, a.String())
+	}
+	return
 }
 
 func RegisterAPI(net *Network) {

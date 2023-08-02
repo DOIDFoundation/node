@@ -35,8 +35,10 @@ type discovery struct {
 	chain  *core.BlockChain
 	host   host.Host
 	pubsub *pubsub.PubSub
+	topic  *pubsub.Topic
 	dht    *dual.DHT
 	ds     *dsbadger.Datastore
+	wg     sync.WaitGroup
 
 	mdns mdns.Service
 }
@@ -57,11 +59,13 @@ func newDiscovery(logger log.Logger, chain *core.BlockChain, h host.Host, dht *d
 }
 
 func (d *discovery) OnStart() error {
+	d.wg.Add(1)
 	go d.setupDiscover()
 	return nil
 }
 
 func (d *discovery) OnStop() {
+	d.wg.Wait()
 	if err := d.ds.Close(); err != nil {
 		d.Logger.Error("failed to close datastore", "err", err)
 	}
@@ -71,8 +75,10 @@ func (d *discovery) OnStop() {
 }
 
 func (d *discovery) pubsubDiscover() {
+	defer d.wg.Done()
 	logger := d.Logger.With("topic", TopicPeer)
-	topic, err := d.pubsub.Join(TopicPeer)
+	var err error
+	d.topic, err = d.pubsub.Join(TopicPeer)
 	if err != nil {
 		logger.Error("Failed to join pubsub topic", "err", err)
 		return
@@ -95,14 +101,14 @@ func (d *discovery) pubsubDiscover() {
 		}
 	}
 
-	go pubsubMessageLoop(ctx, topic, d.host.ID(), peerFound, logger)
+	go pubsubMessageLoop(ctx, d.topic, d.host.ID(), peerFound, logger)
 
 	duration := time.Second
 	ticker := time.NewTicker(duration)
 	defer ticker.Stop()
 
 	for {
-		if len(topic.ListPeers()) == 0 {
+		if len(d.topic.ListPeers()) == 0 {
 			if duration != time.Second {
 				duration = time.Second
 				ticker.Reset(duration)
@@ -110,7 +116,7 @@ func (d *discovery) pubsubDiscover() {
 			logger.Debug("no peer in topic, wait")
 		} else if bz, err := rlp.EncodeToBytes(&state{Height: d.chain.LatestBlock().Header.Height.Uint64(), Td: new(big.Int).Set(d.chain.GetTd())}); err != nil {
 			logger.Error("failed to encode peer state", "err", err)
-		} else if err = topic.Publish(ctx, bz); err != nil {
+		} else if err = d.topic.Publish(ctx, bz); err != nil {
 			logger.Error("failed to publish peer state", "err", err)
 		} else {
 			if duration != time.Minute {
@@ -185,6 +191,7 @@ func (d *discovery) connect(peerInfo peer.AddrInfo) {
 }
 
 func (d *discovery) setupDiscover() {
+	defer d.wg.Done()
 	// Let's connect to the bootstrap nodes first. They will tell us about the
 	// other nodes in the network.
 	BootstrapPeers := d.bootstrapPeers()
@@ -206,15 +213,17 @@ func (d *discovery) setupDiscover() {
 	wg.Wait()
 
 	// save connected peers
-	go d.saveConnectedPeers()
+	d.wg.Add(1)
+	go d.backupConnectedPeersLoop()
 
 	// start discovery after bootstrap
 	d.Logger.Info("Discovering p2p network")
 
-	if err := d.mdns.Start(); err != nil {
-		d.Logger.Error("failed to start mdns discovery", "err", err)
-	}
+	// if err := d.mdns.Start(); err != nil {
+	// 	d.Logger.Error("failed to start mdns discovery", "err", err)
+	// }
 
+	d.wg.Add(1)
 	go d.pubsubDiscover()
 
 	// Bootstrap the DHT. In the default configuration, this spawns a Background
@@ -327,70 +336,75 @@ func (d *discovery) saveBackupPeers(backupPeers []peer.AddrInfo) {
 	}
 }
 
-func (d *discovery) saveConnectedPeers() {
+func (d *discovery) backupConnectedPeersLoop() {
+	defer d.wg.Done()
 	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()
 
 	for {
-		MaxBackupBootstrapSize := 20
-		// Randomize the list of connected peers, we don't prioritize anyone.
-		connectedPeers := randomizeList(d.host.Network().Peers())
-		bootstrapPeers := d.bootstrapPeers()
-		backupPeers := make([]peer.AddrInfo, 0, MaxBackupBootstrapSize)
+		d.backupConnectedPeers()
+		select {
+		case <-ctx.Done():
+			d.backupConnectedPeers()
+			return
+		case <-ticker.C:
+			continue
+		}
+	}
+}
 
-		// Choose peers to save and filter out the ones that are already bootstrap nodes.
-		for _, p := range connectedPeers {
+func (d *discovery) backupConnectedPeers() {
+	MaxBackupBootstrapSize := 20
+	// Randomize the list of connected peers, we don't prioritize anyone.
+	connectedPeers := randomizeList(d.host.Network().Peers())
+	bootstrapPeers := d.bootstrapPeers()
+	backupPeers := make([]peer.AddrInfo, 0, MaxBackupBootstrapSize)
+
+	// Choose peers to save and filter out the ones that are already bootstrap nodes.
+	for _, p := range connectedPeers {
+		found := false
+		for _, bootstrapPeer := range bootstrapPeers {
+			if p == bootstrapPeer.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			backupPeers = append(backupPeers, peer.AddrInfo{
+				ID:    p,
+				Addrs: d.host.Network().Peerstore().Addrs(p),
+			})
+		}
+
+		if len(backupPeers) >= MaxBackupBootstrapSize {
+			break
+		}
+	}
+	// If we didn't reach the target number use previously stored connected peers.
+	if len(backupPeers) < MaxBackupBootstrapSize {
+		oldSavedPeers := d.loadBackupPeers()
+		d.Logger.Debug("not enough backup peers", "missing", MaxBackupBootstrapSize-len(backupPeers), "target", MaxBackupBootstrapSize, "saved", len(oldSavedPeers))
+
+		// Add some of the old saved peers. Ensure we don't duplicate them.
+		for _, p := range oldSavedPeers {
 			found := false
-			for _, bootstrapPeer := range bootstrapPeers {
-				if p == bootstrapPeer.ID {
+			for _, sp := range backupPeers {
+				if p.ID == sp.ID {
 					found = true
 					break
 				}
 			}
+
 			if !found {
-				backupPeers = append(backupPeers, peer.AddrInfo{
-					ID:    p,
-					Addrs: d.host.Network().Peerstore().Addrs(p),
-				})
+				backupPeers = append(backupPeers, p)
 			}
 
 			if len(backupPeers) >= MaxBackupBootstrapSize {
 				break
 			}
 		}
-		// If we didn't reach the target number use previously stored connected peers.
-		if len(backupPeers) < MaxBackupBootstrapSize {
-			oldSavedPeers := d.loadBackupPeers()
-			d.Logger.Debug("not enough backup peers", "missing", MaxBackupBootstrapSize-len(backupPeers), "target", MaxBackupBootstrapSize, "saved", len(oldSavedPeers))
-
-			// Add some of the old saved peers. Ensure we don't duplicate them.
-			for _, p := range oldSavedPeers {
-				found := false
-				for _, sp := range backupPeers {
-					if p.ID == sp.ID {
-						found = true
-						break
-					}
-				}
-
-				if !found {
-					backupPeers = append(backupPeers, p)
-				}
-
-				if len(backupPeers) >= MaxBackupBootstrapSize {
-					break
-				}
-			}
-		}
-
-		d.saveBackupPeers(backupPeers)
-		d.Logger.Debug("backup peers saved", "saved", len(backupPeers), "target", MaxBackupBootstrapSize)
-
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			continue
-		}
 	}
+
+	d.saveBackupPeers(backupPeers)
+	d.Logger.Debug("backup peers saved", "saved", len(backupPeers), "target", MaxBackupBootstrapSize)
 }

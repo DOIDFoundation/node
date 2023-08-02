@@ -32,7 +32,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-var ctx = context.Background()
+var ctx, cancelCtx = context.WithCancel(context.Background())
 var peerNotifier = make(chan peer.AddrInfo)
 
 type Network struct {
@@ -184,6 +184,7 @@ func (n *Network) OnStart() error {
 
 // OnStop stops the Network. It implements service.Service.
 func (n *Network) OnStop() {
+	cancelCtx()
 	n.stopSync()
 	n.discovery.Stop()
 	n.host.Close()
