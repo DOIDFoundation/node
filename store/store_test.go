@@ -24,17 +24,16 @@ func TestSqliteStore(t *testing.T) {
 
 	s := &store.SqliteStore{Logger: log.NewTMLogger(log.NewSyncWriter(os.Stdout))}
 	require.NotNil(t, s)
-	sqlite3DbPath := "./doid_node_data/sqlite3.db"
+	sqlite3DbPath := "./data.db"
 	flag := s.Init(sqlite3DbPath)
 
 	require.True(t, flag)
 
-	// flag = s.AddMiner(types.Hash{byte(0)}, 1, types.Address{byte(1)})
-	// fmt.Println(types.Hash{byte(0)})
-	// flag = s.RemoveMinerByHash(types.Hash{byte(0), byte(1)})
+	// flag = s.AddMiner(1, types.HexToAddress("0x9a5de5673bb089924da48ca6fb3778766667dfe1"))
+	// flag = s.RemoveMinerByHeight(1)
 	// require.True(t, flag)
 
-	ret := s.QueryBlockByMiner(types.HexToAddress("0x9a5de5673bb089924da48ca6fb3778766667dfe1"), 1, 10)
+	ret := s.QueryBlockByMiner(types.HexToAddress("0x9a5de5673bb089924da48ca6fb3778766667dfe1"), 1, 1)
 	for i, v := range ret {
 		fmt.Printf("arr[%d] = %d\n", i, v)
 	}
