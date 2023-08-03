@@ -108,7 +108,7 @@ func (bs *BlockStore) WriteHeader(header *types.Header) {
 		height = header.Height.Uint64()
 	)
 	bs.WriteData(headerKey(height, hash), header)
-	bs.WriteHeightByHash(hash, height, header.Miner)
+	bs.WriteHeightByHash(hash, height)
 }
 
 // ReadDataRLP retrieves the data in RLP encoding.
@@ -162,18 +162,12 @@ func (bs *BlockStore) ReadHeightByHash(hash types.Hash) *uint64 {
 }
 
 // WriteHeightByHash stores the hash->height mapping.
-func (bs *BlockStore) WriteHeightByHash(hash types.Hash, height uint64, miner types.Address) {
+func (bs *BlockStore) WriteHeightByHash(hash types.Hash, height uint64) {
 	key := headerHeightKey(hash)
 	enc := encodeBlockHeight(height)
 	if err := bs.db.Set(key, enc); err != nil {
 		bs.Logger.Error("Failed to store hash to height mapping", "err", err)
 		panic(err)
-	}
-
-	flag := bs.sqlitedb.AddMiner(height, miner)
-	if flag == false {
-		bs.Logger.Error("Failed to store miner to sqlite3")
-		panic("Failed to store miner to sqlite3")
 	}
 }
 

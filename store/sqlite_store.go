@@ -36,26 +36,20 @@ func (s *SqliteStore) Init(sqlite3DbPath string) bool {
 }
 
 func (s *SqliteStore) AddMiner(height uint64, miner types.Address) bool {
-	var exists bool
-	err := s.Db.QueryRow("SELECT EXISTS(SELECT 1 FROM miner_block WHERE miner_address=? and block_height=?)", hexutil.Encode(miner.Bytes()), height).Scan(&exists)
+	result, err := s.Db.Exec("INSERT INTO miner_block (miner_address,block_height) VALUES (?,?)", hexutil.Encode(miner.Bytes()), height)
 	if err != nil {
-		s.Logger.Error("AddMiner Query error:", "err", err)
+		s.Logger.Error("AddMiner INSERT error:", "err", err)
 		return false
 	}
-
-	if exists {
+	if rows, err := result.RowsAffected(); err == nil && rows == 0 {
 		s.Logger.Debug("AddMiner Record exists")
 		return true
-	} else {
-		_, err := s.Db.Exec("INSERT INTO miner_block (miner_address,block_height) VALUES (?,?)", hexutil.Encode(miner.Bytes()), height)
-		if err != nil {
-			s.Logger.Error("AddMiner INSERT error:", "err", err)
-			return false
-		}
-		// s.Logger.Info("SQLITE AddMiner success")
-		return true
+	} else if err != nil {
+		s.Logger.Error("AddMiner INSERT error:", "err", err)
+		return false
 	}
-
+	// s.Logger.Info("SQLITE AddMiner success")
+	return true
 }
 
 func (s *SqliteStore) RemoveMinerByHeight(height uint64) bool {

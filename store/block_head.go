@@ -20,10 +20,16 @@ func (bs *BlockStore) ReadHashByHeight(height uint64) types.Hash {
 }
 
 // GetHashByHeight stores hash by height for the head chain
-func (bs *BlockStore) WriteHashByHeight(height uint64, hash types.Hash) {
+func (bs *BlockStore) WriteHashByHeight(height uint64, hash types.Hash, miner types.Address) {
 	if err := bs.db.Set(headerHashKey(height), hash); err != nil {
 		bs.Logger.Error("failed to store header hash by height", "err", err, "height", height, "hash", hash)
 		panic(err)
+	}
+
+	flag := bs.sqlitedb.AddMiner(height, miner)
+	if flag == false {
+		bs.Logger.Error("Failed to store miner to sqlite3")
+		panic("Failed to store miner to sqlite3")
 	}
 }
 

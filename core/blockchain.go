@@ -86,7 +86,7 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 		})
 		bc.latestTD = new(big.Int)
 		bc.writeBlockAndTd(block)
-		bc.blockStore.WriteHashByHeight(block.Header.Height.Uint64(), block.Hash())
+		bc.blockStore.WriteHashByHeight(block.Header.Height.Uint64(), block.Hash(), block.Header.Miner)
 		bc.blockStore.WriteHeadBlockHash(block.Hash())
 		if hash, version, err := bc.state.SaveVersion(); err != nil || version != 1 || !bytes.Equal(hash, block.Header.Root) {
 			logger.Error("failed to save genesis block state", "err", err, "block", block.Header, "newHash", hash, "newVersion", version)
@@ -252,7 +252,7 @@ func (bc *BlockChain) ApplyBlock(block *types.Block) error {
 	if err := bc.applyBlockAndWrite(block); err != nil {
 		return err
 	}
-	bc.blockStore.WriteHashByHeight(block.Header.Height.Uint64(), block.Hash())
+	bc.blockStore.WriteHashByHeight(block.Header.Height.Uint64(), block.Hash(), block.Header.Miner)
 	bc.setHead(block)
 
 	return nil
@@ -317,7 +317,7 @@ func (bc *BlockChain) ApplyHeaderChain(hc *HeaderChain) error {
 			if header.Height > latest.Header.Height.Uint64() {
 				break
 			}
-			bc.blockStore.WriteHashByHeight(header.Height, header.Hash)
+			bc.blockStore.WriteHashByHeight(header.Height, header.Hash, header.Miner)
 		}
 		// switch to new chain
 		bc.setHead(latest)

@@ -13,6 +13,7 @@ import (
 type lightHeader struct {
 	Height uint64
 	Hash   types.Hash
+	Miner  types.Address
 }
 
 // used to store a sort of contiguous block headers for later applying
@@ -80,7 +81,7 @@ func (hc *HeaderChain) AppendBlocks(blocks []*types.Block) error {
 		}
 		hc.td.Add(hc.td, block.Header.Difficulty)
 		hc.saveAndCacheBlock(block)
-		hc.headers = append(hc.headers, lightHeader{Height: height, Hash: hash})
+		hc.headers = append(hc.headers, lightHeader{Height: height, Hash: hash, Miner: block.Header.Miner})
 		hc.last = block.Header
 	}
 	return nil
