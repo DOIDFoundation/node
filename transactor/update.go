@@ -10,10 +10,10 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-type UpdateDOID struct{}
+type Update struct{}
 
-func (u *UpdateDOID) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
-	args := t.(*tx.UpdateDOID)
+func (u *Update) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
+	args := t.(*tx.Update)
 	if len(args.Owner) == 0 {
 		return errors.New("missing args: Owner")
 	}
@@ -44,7 +44,7 @@ func (u *UpdateDOID) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
 	return nil
 }
 
-func (u *UpdateDOID) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, error) {
+func (u *Update) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, error) {
 	reserve, ok := t.(*tx.Reserve)
 	if !ok {
 		return resRejected, errors.New("bad tx type")
