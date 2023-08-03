@@ -1,6 +1,8 @@
 package network
 
 import (
+	"fmt"
+
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
@@ -33,7 +35,7 @@ func (api *API) Peers() peer.IDSlice {
 func (api *API) Connections() (addrs []string) {
 	for _, conn := range api.net.host.Network().Conns() {
 		if len(addrs) > 20 {
-			addrs = append(addrs, "...")
+			addrs = append(addrs, fmt.Sprintf("...(%d connections)", len(api.net.host.Network().Conns())))
 			break
 		}
 		a := peer.AddrInfo{ID: conn.RemotePeer(), Addrs: []multiaddr.Multiaddr{conn.RemoteMultiaddr()}}

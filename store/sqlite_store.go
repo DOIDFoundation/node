@@ -44,7 +44,7 @@ func (s *SqliteStore) AddMiner(height uint64, miner types.Address) bool {
 	}
 
 	if exists {
-		s.Logger.Info("AddMiner Record exists")
+		s.Logger.Debug("AddMiner Record exists")
 		return true
 	} else {
 		_, err := s.Db.Exec("INSERT INTO miner_block (miner_address,block_height) VALUES (?,?)", hexutil.Encode(miner.Bytes()), height)
@@ -52,7 +52,7 @@ func (s *SqliteStore) AddMiner(height uint64, miner types.Address) bool {
 			s.Logger.Error("AddMiner INSERT error:", "err", err)
 			return false
 		}
-		s.Logger.Info("SQLITE AddMiner success")
+		// s.Logger.Info("SQLITE AddMiner success")
 		return true
 	}
 
