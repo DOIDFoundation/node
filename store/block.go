@@ -14,11 +14,14 @@ import (
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/cometbft/cometbft/libs/log"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type BlockStore struct {
 	log.Logger
-	db cmtdb.DB
+	db       cmtdb.DB
+	sqlitedb *SqliteStore
 }
 
 func NewBlockStore(logger log.Logger) (*BlockStore, error) {
@@ -27,9 +30,15 @@ func NewBlockStore(logger log.Logger) (*BlockStore, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	_sqliteDb := &SqliteStore{Logger: logger.With("module", "sqliteStore")}
+	initRet := _sqliteDb.Init(filepath.Join(homeDir, "sqlite3.db"))
+	logger.Info("sqlite_store init:", initRet)
+
 	return &BlockStore{
-		Logger: logger.With("module", "blockStore"),
-		db:     db,
+		Logger:   logger.With("module", "blockStore"),
+		db:       db,
+		sqlitedb: _sqliteDb,
 	}, nil
 }
 
@@ -99,7 +108,7 @@ func (bs *BlockStore) WriteHeader(header *types.Header) {
 		height = header.Height.Uint64()
 	)
 	bs.WriteData(headerKey(height, hash), header)
-	bs.WriteHeightByHash(hash, height)
+	bs.WriteHeightByHash(hash, height, header.Miner)
 }
 
 // ReadDataRLP retrieves the data in RLP encoding.
@@ -153,12 +162,18 @@ func (bs *BlockStore) ReadHeightByHash(hash types.Hash) *uint64 {
 }
 
 // WriteHeightByHash stores the hash->height mapping.
-func (bs *BlockStore) WriteHeightByHash(hash types.Hash, height uint64) {
+func (bs *BlockStore) WriteHeightByHash(hash types.Hash, height uint64, miner types.Address) {
 	key := headerHeightKey(hash)
 	enc := encodeBlockHeight(height)
 	if err := bs.db.Set(key, enc); err != nil {
 		bs.Logger.Error("Failed to store hash to height mapping", "err", err)
 		panic(err)
+	}
+
+	flag := bs.sqlitedb.AddMiner(height, miner)
+	if flag == false {
+		bs.Logger.Error("Failed to store miner to sqlite3")
+		panic("Failed to store miner to sqlite3")
 	}
 }
 
@@ -229,4 +244,8 @@ func (bs *BlockStore) ReadReceipt(hash types.Hash) (result *types.StoredReceipt)
 func (bs *BlockStore) Close() error {
 	bs.Logger.Debug("closing block store")
 	return bs.db.Close()
+}
+
+func (bs *BlockStore) GetSqliteDB() *SqliteStore {
+	return bs.sqlitedb
 }

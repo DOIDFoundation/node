@@ -28,6 +28,23 @@ ifneq ($(strip $(GOARCH)),)
 	endif
 endif
 
+CROSSFLAG=
+ifeq ($(GOOS),linux)
+	ifeq ($(GOARCH),arm64)
+		CROSSFLAG=CC=arm-linux-gnueabihf-gcc CXX=arm-linux-gnueabihf-g++ CGO_ENABLED=1
+	endif
+	ifneq ($(OS),Windows_NT)
+		UNAME_S := $(shell uname -s)
+		ifeq ($(UNAME_S),Darwin)
+			ifeq ($(GOARCH),amd64)
+				CROSSFLAG=CC=x86_64-linux-musl-gcc CXX=x86_64-linux-musl-g++ CGO_ENABLED=1
+				LD_FLAGS+=-linkmode external -extldflags -static
+			endif
+		endif
+	endif
+endif
+GO_BUILD_ENV+=$(CROSSFLAG)
+
 all: build test
 .PHONY: all
 

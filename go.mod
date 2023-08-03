@@ -10,11 +10,12 @@ require (
 	github.com/ethereum/go-ethereum v1.11.6
 	github.com/graytonio/go-bidirectional-map v0.0.1
 	github.com/hashicorp/golang-lru v0.5.4
+	github.com/ipfs/go-datastore v0.6.0
 	github.com/ipfs/go-ds-badger v0.3.0
 	github.com/libp2p/go-libp2p v0.27.5
 	github.com/libp2p/go-libp2p-kad-dht v0.23.0
-	github.com/libp2p/go-libp2p-peerstore v0.8.0
 	github.com/libp2p/go-libp2p-pubsub v0.9.3
+	github.com/mattn/go-sqlite3 v1.14.17
 	github.com/multiformats/go-multiaddr v0.9.0
 	github.com/spf13/cobra v1.6.1
 	github.com/spf13/pflag v1.0.5
@@ -81,7 +82,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.0.1 // indirect
 	github.com/ipfs/boxo v0.8.0 // indirect
 	github.com/ipfs/go-cid v0.4.1 // indirect
-	github.com/ipfs/go-datastore v0.6.0 // indirect
 	github.com/ipfs/go-ipfs-util v0.0.2 // indirect
 	github.com/ipfs/go-log v1.0.5 // indirect
 	github.com/ipfs/go-log/v2 v2.5.1 // indirect
