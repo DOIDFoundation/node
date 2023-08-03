@@ -28,6 +28,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/routing"
 	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoreds"
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
+	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
 	"github.com/spf13/viper"
 )
@@ -126,12 +127,19 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 		return nil
 	}
 
+	cm, err := connmgr.NewConnManager(20, 50)
+	if err != nil {
+		network.Logger.Error("Failed to create libp2p connection manager", "err", err)
+		return nil
+	}
+
 	var idht *dual.DHT
 	network.host, err = libp2p.New(
 		libp2p.Identity(network.loadPrivateKey()),
 		libp2p.ListenAddrStrings(viper.GetStringSlice(flags.P2P_Addr)...),
 		libp2p.UserAgent(version.VersionWithCommit()),
 		libp2p.ResourceManager(rm),
+		libp2p.ConnectionManager(cm),
 		libp2p.Security(noise.ID, noise.New),
 		libp2p.Peerstore(ps),
 		// Attempt to open ports using uPNP for NATed hosts.
