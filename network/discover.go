@@ -20,12 +20,12 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/multiformats/go-multistream"
 	"github.com/spf13/viper"
 )
 
@@ -143,25 +143,26 @@ func (d *discovery) HandlePeerFound(pi peer.AddrInfo) {
 		return
 	}
 	d.Logger.Debug("mdns found peer", "peer", pi)
-	peerNotifier <- pi
+	d.host.Connect(ctx, pi)
+	// peerNotifier <- pi
 }
 
 func (n *Network) notifyPeerFoundEvent() {
 	for {
 		pi := <-peerNotifier
-		switch n.host.Network().Connectedness(pi.ID) {
-		case network.Connected:
-			n.Logger.Debug("already connected", "peer", pi)
-			continue
-		case network.CannotConnect:
-			n.Logger.Debug("not connectable", "peer", pi)
-			continue
-		}
 
 		go func() {
 			stream, err := n.host.NewStream(ctx, pi.ID, protocol.ID(ProtocolState))
 			if err != nil {
-				n.Logger.Debug("failed to create stream", "err", err, "peer", pi)
+				if errors.Is(err, multistream.ErrNotSupported[protocol.ID]{}) {
+					// n.Logger.Debug("protocol not supported", "err", err, "peer", pi)
+					if len(n.host.Network().Conns()) > MaxBackupBootstrapSize {
+						n.host.Network().ClosePeer(pi.ID)
+					}
+				}
+				//  else {
+				// 	n.Logger.Debug("failed to create stream", "err", err, "peer", pi)
+				// }
 				return
 			}
 			n.Logger.Debug("stream established", "peer", pi)
@@ -258,7 +259,8 @@ func (d *discovery) setupDiscover() {
 					continue
 				}
 				d.Logger.Debug("dht found peer", "peer", p)
-				peerNotifier <- p
+				d.host.Connect(ctx, p)
+				// peerNotifier <- p
 			}
 		}
 
@@ -280,6 +282,8 @@ func randomizeList[T any](in []T) []T {
 }
 
 var keyBackupPeers = datastore.NewKey("backup_peers")
+
+const MaxBackupBootstrapSize = 20
 
 func (d *discovery) loadBackupPeers() []peer.AddrInfo {
 	var addrs []string
@@ -356,7 +360,6 @@ func (d *discovery) backupConnectedPeersLoop() {
 }
 
 func (d *discovery) backupConnectedPeers() {
-	MaxBackupBootstrapSize := 20
 	// Randomize the list of connected peers, we don't prioritize anyone.
 	connectedPeers := randomizeList(d.host.Network().Peers())
 	bootstrapPeers := d.bootstrapPeers()

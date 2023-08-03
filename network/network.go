@@ -170,6 +170,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 
 // OnStart starts the Network. It implements service.Service.
 func (n *Network) OnStart() error {
+	n.host.Network().Notify(n)
 	n.host.SetStreamHandler(protocol.ID(ProtocolGetBlocks), n.getBlocksHandler)
 	n.host.SetStreamHandler(protocol.ID(ProtocolState), n.stateHandler)
 
@@ -184,6 +185,7 @@ func (n *Network) OnStart() error {
 
 // OnStop stops the Network. It implements service.Service.
 func (n *Network) OnStop() {
+	n.host.Network().StopNotify(n)
 	cancelCtx()
 	n.stopSync()
 	n.discovery.Stop()
