@@ -18,16 +18,16 @@ type Type uint8
 
 // Transaction types, append only.
 const (
-	TypeRegister   Type = iota
-	TypeReserve    Type = 1
-	TypeUpdateDOID Type = 2
+	TypeRegister Type = iota
+	TypeReserve  Type = 1
+	TypeUpdate   Type = 2
 )
 
 // Transaction types strings, for json marshalling/unmarshalling.
 var typeStrings = bidmap.NewMap(map[Type]string{
-	TypeRegister:   "register",
-	TypeReserve:    "reserve",
-	TypeUpdateDOID: "updateDOID",
+	TypeRegister: "register",
+	TypeReserve:  "reserve",
+	TypeUpdate:   "update",
 })
 
 func NewTypedTx(t Type) TypedTx {
@@ -36,8 +36,8 @@ func NewTypedTx(t Type) TypedTx {
 		return new(Register)
 	case TypeReserve:
 		return new(Reserve)
-	case TypeUpdateDOID:
-		return new(UpdateDOID)
+	case TypeUpdate:
+		return new(Update)
 	default:
 		return nil
 	}
