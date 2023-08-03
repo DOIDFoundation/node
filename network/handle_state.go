@@ -2,6 +2,7 @@ package network
 
 import (
 	"math/big"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -50,6 +51,7 @@ func getPeerState(s peerstore.Peerstore, id peer.ID) *state {
 }
 
 var peerHasState = make(map[peer.ID]bool)
+var peerMutex sync.Mutex
 
 func updatePeerState(peerStore peerstore.Peerstore, peer peer.ID, peerState *state) (updated bool, err error) {
 	if oldState := getPeerState(peerStore, peer); oldState != nil && oldState.Td.Cmp(peerState.Td) == 0 {
@@ -59,8 +61,17 @@ func updatePeerState(peerStore peerstore.Peerstore, peer peer.ID, peerState *sta
 	} else if err = peerStore.Put(peer, metaState, bz); err != nil {
 		return false, err
 	}
+	peerMutex.Lock()
+	defer peerMutex.Unlock()
 	peerHasState[peer] = true
 	return true, nil
+}
+
+func deletePeerState(peerStore peerstore.Peerstore, peer peer.ID) {
+	peerStore.RemovePeer(peer)
+	peerMutex.Lock()
+	defer peerMutex.Unlock()
+	delete(peerHasState, peer)
 }
 
 func (n *Network) stateHandler(s network.Stream) {

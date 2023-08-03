@@ -27,6 +27,5 @@ func (n *Network) Connected(network network.Network, c network.Conn) {
 // called when a connection closed
 func (n *Network) Disconnected(_ network.Network, c network.Conn) {
 	// n.Logger.Debug("disconnected", "peer", c.RemotePeer())
-	n.host.Peerstore().RemovePeer(c.RemotePeer())
-	delete(peerHasState, c.RemotePeer())
+	deletePeerState(n.host.Peerstore(), c.RemotePeer())
 }

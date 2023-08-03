@@ -51,8 +51,7 @@ func (s *syncService) OnStop() {
 func (s *syncService) dropPeer() {
 	s.Logger.Info("drop peer")
 	s.host.Network().ClosePeer(s.id)
-	s.host.Peerstore().RemovePeer(s.id)
-	delete(peerHasState, s.id)
+	deletePeerState(s.host.Peerstore(), s.id)
 }
 
 func (s *syncService) sync() {

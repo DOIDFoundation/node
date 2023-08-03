@@ -32,6 +32,10 @@ func (api *API) Peers() peer.IDSlice {
 
 func (api *API) Connections() (addrs []string) {
 	for _, conn := range api.net.host.Network().Conns() {
+		if len(addrs) > 20 {
+			addrs = append(addrs, "...")
+			break
+		}
 		a := peer.AddrInfo{ID: conn.RemotePeer(), Addrs: []multiaddr.Multiaddr{conn.RemoteMultiaddr()}}
 		addrs = append(addrs, a.String())
 	}
