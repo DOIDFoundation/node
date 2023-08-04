@@ -7,12 +7,14 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/DOIDFoundation/node/version"
+	"github.com/cometbft/cometbft/crypto/tmhash"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -138,6 +140,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 		libp2p.Identity(network.loadPrivateKey()),
 		libp2p.ListenAddrStrings(viper.GetStringSlice(flags.P2P_Addr)...),
 		libp2p.UserAgent(version.VersionWithCommit()),
+		libp2p.PrivateNetwork(tmhash.Sum([]byte(viper.GetString(flags.P2P_Rendezvous)))),
 		libp2p.ResourceManager(rm),
 		libp2p.ConnectionManager(cm),
 		libp2p.Security(noise.ID, noise.New),
@@ -148,7 +151,8 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			idht, err = dual.New(ctx, h,
 				dual.WanDHTOption(dht.Datastore(dsDht)),
-				dual.DHTOption(dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...)),
+				dual.DHTOption(dht.BootstrapPeers(network.discovery.bootstrapPeers()...)),
+				dual.DHTOption(dht.ProtocolPrefix("/doid/kad/1")),
 			)
 			return idht, err
 		}),
@@ -247,16 +251,18 @@ func (n *Network) unregisterEventHandlers() {
 
 func (n *Network) registerEventHandlers() {
 	var once sync.Once
-	eventPeerState.Subscribe(n.String(), func(peer peer.ID) {
-		peerState := getPeerState(n.host.Peerstore(), peer)
-		n.Logger.Debug("got peer state", "peer", peer, "state", peerState)
+	eventPeerState.Subscribe(n.String(), func(pid peer.ID) {
+		peerState := getPeerState(n.host.Peerstore(), pid)
+		n.Logger.Debug("got peer state", "peer", pid, "state", peerState)
 		if peerState != nil {
 			switch peerState.Td.Cmp(n.blockChain.GetTd()) {
 			case -1: // we are high
 				go func() {
-					stream, err := n.host.NewStream(ctx, peer, protocol.ID(ProtocolState))
+					ctx, cancel := context.WithTimeout(ctx, time.Second*15)
+					defer cancel()
+					stream, err := n.host.NewStream(ctx, pid, protocol.ID(ProtocolState))
 					if err != nil {
-						n.Logger.Debug("failed to create stream", "err", err, "peer", peer)
+						n.Logger.Debug("failed to create stream", "err", err, "peer", pid)
 						return
 					}
 					stream.CloseRead()

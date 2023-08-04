@@ -1,6 +1,7 @@
 package network
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math/big"
@@ -16,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ipfs/go-datastore"
 	dsbadger "github.com/ipfs/go-ds-badger"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -114,6 +114,11 @@ func (d *discovery) pubsubDiscover() {
 				ticker.Reset(duration)
 			}
 			logger.Debug("no peer in topic, wait")
+			for _, peerInfo := range d.bootstrapPeers() {
+				go func(peerInfo peer.AddrInfo) {
+					d.connect(peerInfo)
+				}(peerInfo)
+			}
 		} else if bz, err := rlp.EncodeToBytes(&state{Height: d.chain.LatestBlock().Header.Height.Uint64(), Td: new(big.Int).Set(d.chain.GetTd())}); err != nil {
 			logger.Error("failed to encode peer state", "err", err)
 		} else if err = d.topic.Publish(ctx, bz); err != nil {
@@ -152,11 +157,14 @@ func (n *Network) notifyPeerFoundEvent() {
 		pi := <-peerNotifier
 
 		go func() {
+			ctx, cancel := context.WithTimeout(ctx, time.Second*5) // @todo add a config/flag for this timeout
+			defer cancel()
 			stream, err := n.host.NewStream(ctx, pi.ID, protocol.ID(ProtocolState))
 			if err != nil {
 				if errors.Is(err, multistream.ErrNotSupported[protocol.ID]{}) {
 					// n.Logger.Debug("protocol not supported", "err", err, "peer", pi)
-					if len(n.host.Network().Conns()) > MaxBackupBootstrapSize {
+					if !n.host.ConnManager().IsProtected(pi.ID, "bootstrap") &&
+						len(n.host.Network().Conns()) > MaxBackupBootstrapSize {
 						n.host.Network().ClosePeer(pi.ID)
 					}
 				}
@@ -172,24 +180,23 @@ func (n *Network) notifyPeerFoundEvent() {
 	}
 }
 
-func (d *discovery) bootstrapPeers() (addrs []*peer.AddrInfo) {
-	for _, peerAddr := range dht.DefaultBootstrapPeers { // @todo add a flag/config
-		peerInfo, err := peer.AddrInfoFromP2pAddr(peerAddr)
-		if err != nil {
-			d.Logger.Error("failed to parse bootstrap peer", "peer", peerAddr, "err", err)
-			continue
-		}
-		addrs = append(addrs, peerInfo)
+func (d *discovery) bootstrapPeers() (addrs []peer.AddrInfo) {
+	peerInfo, err := peer.AddrInfoFromString("/dnsaddr/bootstrap.doid.tech/p2p/12D3KooWF94jbGD8VKsiiDnYTCDCbbiLPV3Z8yVfGsZFQWTocF8N")
+	if err == nil {
+		addrs = append(addrs, *peerInfo)
+	} else {
+		d.Logger.Error("failed to parse bootstrap peer", "err", err)
 	}
 	return
 }
 
 func (d *discovery) connect(peerInfo peer.AddrInfo) {
-	d.Logger.Debug("try connect", "peer", peerInfo)
+	d.Logger.Debug("try connect", "peer", peerInfo, "type", "bootstrap")
+	d.host.ConnManager().Protect(peerInfo.ID, "bootstrap")
 	if err := d.host.Connect(ctx, peerInfo); err != nil {
-		d.Logger.Error("failed to connect", "peer", peerInfo, "err", err)
+		d.Logger.Error("failed to connect", "peer", peerInfo, "err", err, "type", "bootstrap")
 	} else {
-		d.Logger.Info("connected", "peer", peerInfo)
+		d.Logger.Info("connected", "peer", peerInfo, "type", "bootstrap")
 	}
 }
 
@@ -201,9 +208,9 @@ func (d *discovery) setupDiscover() {
 	var wg sync.WaitGroup
 	for _, peerInfo := range BootstrapPeers {
 		wg.Add(1)
-		go func(peerInfo *peer.AddrInfo) {
+		go func(peerInfo peer.AddrInfo) {
 			defer wg.Done()
-			d.connect(*peerInfo)
+			d.connect(peerInfo)
 		}(peerInfo)
 	}
 
