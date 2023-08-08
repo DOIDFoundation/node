@@ -2,7 +2,7 @@ package transactor
 
 func ValidateDoidName(s string, valid int) bool {
 	length := getStringLength(s)
-	if length > valid {
+	if length <= valid {
 		return false
 	} else {
 		return true

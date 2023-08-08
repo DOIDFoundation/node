@@ -102,7 +102,11 @@ response
 ```
 {"jsonrpc":"2.0","id":1,"result":"f39fd6e51aad88f6f4ce6ab8827279cfffb92266"}
 ```
-````
+
+### update doidname
+```
+curl -v -s 'localhost:8556' -H "Content-Type: application/json" -X POST --data '{"jsonrpc":"2.0","id":1,"method":"doid_sendTransaction","params":[{"type":"update","data":{"DOID":"test","Owner":"f39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "Signature": "506f3bd07f7015be3495861d5548bca597f3a35ff81df122d0b08ebbbb2aefa52f9aa5bd3b38824d18cd8cce73c35a88518222d7f75f0b6360039f72081701ab01"}}]}'
+```
 
 ### get transaction by hash
 
@@ -115,5 +119,9 @@ curl -s 'http://127.0.0.1:8556' -H "Content-Type: application/json" -X POST --da
 response
 
 ````
+
 {"jsonrpc":"2.0","id":1,"result":{"DOID":"test","owner":"F39FD6E51AAD88F6F4CE6AB8827279CFFFB92266","from":"F39FD6E51AAD88F6F4CE6AB8827279CFFFB92266","nameHash":"9C22FF5F21F0B81B113E63F7DB6DA94FEDEF11B2119B4088B89664FB9A3CB658","signature":"","Type":0,"Hash":"D6392B9662608F2534E12C37BD5D679B2171DF271051E902BAF89E12E0A45512"}}```
-````
+
+```
+
+```
