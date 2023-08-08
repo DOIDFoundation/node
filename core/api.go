@@ -52,20 +52,6 @@ type GetBlockByMinerParam struct {
 	Page  int           `json:"page"`
 }
 
-func (a *API) GetBlockByMiner(param *GetBlockByMinerParam) *GetBlockByMinerData {
-	miner := param.Miner
-	limit := param.Limit
-	page := param.Page
-	totalRecords := a.chain.blockStore.GetSqliteDB().CountBlockByMiner(miner, limit)
-	totalPage := (totalRecords + limit - 1) / limit
-	if page <= 0 || page > totalPage {
-		return nil
-	}
-	data := a.chain.blockStore.GetSqliteDB().QueryBlockByMiner(miner, limit, page)
-
-	return &GetBlockByMinerData{Data: data, TotalPage: totalPage}
-}
-
 // func (a *API) GetTransactionByHash(hash types.Hash) types.Tx {
 // 	return a.chain.blockStore.ReadTx(hash)
 // }

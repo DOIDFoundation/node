@@ -3,9 +3,14 @@ BUILDDIR?=$(CURDIR)/build
 
 COMMIT_HASH := $(shell git rev-parse --short HEAD)
 COMMIT_DATE := $(shell git show -s --format=%cs HEAD)
+BUILD_TAGS ?=
 LD_FLAGS = -X github.com/DOIDFoundation/node/version.Commit=$(COMMIT_HASH) \
 		-X github.com/DOIDFoundation/node/version.Date=$(COMMIT_DATE)
 BUILD_FLAGS ?= -mod=readonly -ldflags "$(LD_FLAGS)"
+
+ifneq ($(strip $(BUILD_TAGS)),)
+	BUILD_FLAGS+=-tags $(BUILD_TAGS)
+endif
 
 # for cross compiling, TARGETOS and TARGETARCH can be set by docker
 # GOOS and GOARCH values can be found by command: go tool dist list
@@ -27,23 +32,6 @@ ifneq ($(strip $(GOARCH)),)
 		BUILDDIR:=$(BUILDDIR)/$(GOARCH)
 	endif
 endif
-
-CROSSFLAG=
-ifeq ($(GOOS),linux)
-	ifeq ($(GOARCH),arm64)
-		CROSSFLAG=CC=arm-linux-gnueabihf-gcc CXX=arm-linux-gnueabihf-g++ CGO_ENABLED=1
-	endif
-	ifneq ($(OS),Windows_NT)
-		UNAME_S := $(shell uname -s)
-		ifeq ($(UNAME_S),Darwin)
-			ifeq ($(GOARCH),amd64)
-				CROSSFLAG=CC=x86_64-linux-musl-gcc CXX=x86_64-linux-musl-g++ CGO_ENABLED=1
-				LD_FLAGS+=-linkmode external -extldflags -static
-			endif
-		endif
-	endif
-endif
-GO_BUILD_ENV+=$(CROSSFLAG)
 
 all: build test
 .PHONY: all

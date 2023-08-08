@@ -26,7 +26,7 @@ func (bs *BlockStore) WriteHashByHeight(height uint64, hash types.Hash, miner ty
 		panic(err)
 	}
 
-	flag := bs.sqlitedb.AddMiner(height, miner)
+	flag := bs.MinerDb.AddMiner(height, miner)
 	if flag == false {
 		bs.Logger.Error("Failed to store miner to sqlite3")
 		panic("Failed to store miner to sqlite3")
@@ -39,7 +39,7 @@ func (bs *BlockStore) DeleteHashByHeight(height uint64) {
 		panic(err)
 	}
 
-	flag := bs.sqlitedb.RemoveMinerByHeight(height)
+	flag := bs.MinerDb.RemoveMinerByHeight(height)
 	if flag == false {
 		bs.Logger.Error("Failed to remove miner")
 		panic("Failed to remove miner")
@@ -73,7 +73,7 @@ func (bs *BlockStore) DeleteHashByHeightFrom(height uint64) {
 		panic(err)
 	}
 
-	flag := bs.sqlitedb.RemoveMinerFromHeight(height)
+	flag := bs.MinerDb.RemoveMinerFromHeight(height)
 	if !flag {
 		bs.Logger.Error("Failed to remove miner")
 		panic("Failed to remove miner")

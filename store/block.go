@@ -20,8 +20,8 @@ import (
 
 type BlockStore struct {
 	log.Logger
-	db       cmtdb.DB
-	sqlitedb *SqliteStore
+	db      cmtdb.DB
+	MinerDb MinerStore
 }
 
 func NewBlockStore(logger log.Logger) (*BlockStore, error) {
@@ -31,14 +31,12 @@ func NewBlockStore(logger log.Logger) (*BlockStore, error) {
 		return nil, err
 	}
 
-	_sqliteDb := &SqliteStore{Logger: logger.With("module", "sqliteStore")}
-	initRet := _sqliteDb.Init(filepath.Join(homeDir, "sqlite3.db"))
-	logger.Info("sqlite_store init:", initRet)
+	minerDb := newMinerStore(logger)
 
 	return &BlockStore{
-		Logger:   logger.With("module", "blockStore"),
-		db:       db,
-		sqlitedb: _sqliteDb,
+		Logger:  logger.With("module", "blockStore"),
+		db:      db,
+		MinerDb: minerDb,
 	}, nil
 }
 
@@ -238,8 +236,4 @@ func (bs *BlockStore) ReadReceipt(hash types.Hash) (result *types.StoredReceipt)
 func (bs *BlockStore) Close() error {
 	bs.Logger.Debug("closing block store")
 	return bs.db.Close()
-}
-
-func (bs *BlockStore) GetSqliteDB() *SqliteStore {
-	return bs.sqlitedb
 }

@@ -10,7 +10,7 @@ import (
 func TestHashByHeight(t *testing.T) {
 	store := newBlockStore(t)
 	for i := uint64(0); i < 10; i++ {
-		store.WriteHashByHeight(i, types.Hash{byte(i)})
+		store.WriteHashByHeight(i, types.Hash{byte(i)}, types.HexToAddress("0x0000"))
 	}
 	for i := uint64(0); i < 10; i++ {
 		assert.Equal(t, types.Hash{byte(i)}, store.ReadHashByHeight(i))

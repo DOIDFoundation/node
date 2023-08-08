@@ -1,12 +1,27 @@
+//go:build sqlite
+
 package store
 
 import (
 	"database/sql"
+	"path/filepath"
 
+	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/spf13/viper"
 )
+
+func init() {
+	newMinerStore = func(logger log.Logger) MinerStore {
+		_sqliteDb := &SqliteStore{Logger: logger.With("module", "minerStore")}
+		homeDir := viper.GetString(flags.Home)
+		initRet := _sqliteDb.Init(filepath.Join(homeDir, "data", "sqlite3.db"))
+		logger.Info("sqlite_store init:", initRet)
+		return _sqliteDb
+	}
+}
 
 type SqliteStore struct {
 	log.Logger

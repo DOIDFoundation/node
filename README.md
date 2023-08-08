@@ -42,6 +42,24 @@ Flags:
       --rpc.ws.origins strings   Origins from which to accept websockets requests (default [*])
 ```
 
+### Build
+```
+make doidnode
+```
+
+#### Cross compiling
+```
+make linux-amd64
+```
+
+Available targets are "linux-386 linux-amd64 linux-arm64 windows-386 windows-amd64 darwin-amd64 darwin-arm64"
+
+#### Enable sqlite support
+Sqlite is used to store blocks by miner
+```
+BUILD_TAGS=sqlite make doidnode
+```
+
 ## Test
 
 ```
