@@ -50,6 +50,10 @@ func (s *SqliteStore) Init(sqlite3DbPath string) bool {
 	return true
 }
 
+func (s *SqliteStore) Close() {
+	s.Db.Close()
+}
+
 func (s *SqliteStore) AddMiner(height uint64, miner types.Address) bool {
 	result, err := s.Db.Exec("INSERT INTO miner_block (miner_address,block_height) VALUES (?,?)", hexutil.Encode(miner.Bytes()), height)
 	if err != nil {

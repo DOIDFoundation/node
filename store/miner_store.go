@@ -6,6 +6,7 @@ import (
 )
 
 type MinerStore interface {
+	Close()
 	AddMiner(height uint64, miner types.Address) bool
 	RemoveMinerByHeight(height uint64) bool
 	RemoveMinerFromHeight(height uint64) bool
@@ -18,6 +19,10 @@ type MinerStoreNop struct {
 
 var newMinerStore = func(log.Logger) MinerStore {
 	return &MinerStoreNop{}
+}
+
+func (s *MinerStoreNop) Close() {
+
 }
 
 func (*MinerStoreNop) AddMiner(height uint64, miner types.Address) bool {

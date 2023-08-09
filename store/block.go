@@ -235,5 +235,6 @@ func (bs *BlockStore) ReadReceipt(hash types.Hash) (result *types.StoredReceipt)
 
 func (bs *BlockStore) Close() error {
 	bs.Logger.Debug("closing block store")
+	bs.MinerDb.Close()
 	return bs.db.Close()
 }
