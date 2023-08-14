@@ -6,7 +6,7 @@ const (
 
 	Mainnet   = "mainnet"
 	Testnet   = "testnet"
-	NetworkId = "networkid"
+	NetworkID = "networkid"
 
 	DB_Engine = "db.engine"
 

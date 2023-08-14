@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/DOIDFoundation/node/config"
 	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/store"
@@ -77,7 +78,7 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 	block := bc.blockStore.ReadHeadBlock()
 	if block == nil {
 		bc.Logger.Info("no head block found, generate from genesis")
-		block = types.NewBlockWithHeader(types.GenesisHeader(viper.GetInt(flags.NetworkId)))
+		block = types.NewBlockWithHeader(types.GenesisHeader(config.NetworkID))
 		bc.latestTD = new(big.Int)
 		bc.writeBlockAndTd(block)
 		bc.blockStore.WriteHashByHeight(block.Header.Height.Uint64(), block.Hash(), block.Header.Miner)

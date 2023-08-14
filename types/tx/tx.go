@@ -3,10 +3,9 @@ package tx
 import (
 	"errors"
 
-	"github.com/DOIDFoundation/node/flags"
+	"github.com/DOIDFoundation/node/config"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/spf13/viper"
 )
 
 // TypedTx is the interface of all kinds of transactions
@@ -43,7 +42,7 @@ func NewTx(val TypedTx) (types.Tx, error) {
 	}
 	ret := make([]byte, len(data)+3)
 	ret[0] = 0
-	ret[1] = byte(viper.GetInt(flags.NetworkId))
+	ret[1] = byte(config.NetworkID)
 	ret[2] = byte(val.Type())
 	copy(ret[3:], data)
 	return ret, nil
