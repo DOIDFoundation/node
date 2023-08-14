@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	mapset "github.com/deckarep/golang-set/v2"
+	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 	"path/filepath"
 	"sync"
@@ -28,6 +30,15 @@ var (
 	// ErrFutureBlock is returned when a block's timestamp is in the future according
 	// to the current node.
 	ErrFutureBlock = errors.New("block in the future")
+
+	maxUncles            = 2 // Maximum number of uncles allowed in a single block
+	errTooManyUncles     = errors.New("too many uncles")
+	errDuplicateUncle    = errors.New("duplicate uncle")
+	errUncleIsAncestor   = errors.New("uncle is ancestor")
+	errDanglingUncle     = errors.New("uncle's parent is not ancestor")
+	errInvalidDifficulty = errors.New("non-positive difficulty")
+	errInvalidMixDigest  = errors.New("invalid mix digest")
+	errInvalidPoW        = errors.New("invalid proof-of-work")
 )
 
 type BlockChain struct {
@@ -39,6 +50,11 @@ type BlockChain struct {
 
 	stateDb cosmosdb.DB
 	state   *iavl.MutableTree
+
+	ancestors   mapset.Set[common.Hash]      // ancestor set (used for checking uncle parent validity)
+	family      mapset.Set[common.Hash]      // family set (used for checking uncle invalidity)
+	uncles      mapset.Set[common.Hash]      // uncle set
+	LocalUncles map[common.Hash]*types.Block // uncle set
 }
 
 func NewBlockChain(logger log.Logger) (*BlockChain, error) {
@@ -116,6 +132,71 @@ func (bc *BlockChain) Close() {
 	}
 }
 
+// VerifyUncles verifies that the given block's uncles conform to the consensus
+// rules of the stock Ethereum ethash engine.
+func (bc *BlockChain) VerifyUncles(block *types.Block) error {
+	// Verify that there are at most 2 uncles included in this block
+	if len(block.Uncles) > maxUncles {
+		return errTooManyUncles
+	}
+	// Gather the set of past uncles and ancestors
+	uncles, ancestors := mapset.NewSet[common.Hash](), make(map[common.Hash]*types.Header)
+
+	number, parent := block.Header.Height.Uint64()-1, block.Header.ParentHash
+	for i := 0; i < 7; i++ {
+		ancestor := bc.GetBlock(number, parent)
+		if ancestor == nil {
+			break
+		}
+		hash := common.BytesToHash(ancestor.Hash().Bytes())
+		ancestors[hash] = ancestor.Header
+		for _, uncle := range ancestor.Uncles {
+			uncles.Add(common.BytesToHash(uncle.Hash().Bytes()))
+		}
+		parent, number = ancestor.Header.ParentHash, number-1
+	}
+	ancestors[common.BytesToHash(block.Hash().Bytes())] = block.Header
+	uncles.Add(common.BytesToHash(block.Hash()))
+
+	// Verify each of the uncles that it's recent, but not an ancestor
+	for _, uncle := range block.Uncles {
+		// Make sure every uncle is rewarded only once
+		hash := uncle.Hash()
+		if uncles.Contains(common.BytesToHash(hash.Bytes())) {
+			return errDuplicateUncle
+		}
+		uncles.Add(common.BytesToHash(hash.Bytes()))
+
+		// Make sure the uncle has a valid ancestry
+		if ancestors[common.BytesToHash(hash.Bytes())] != nil {
+			return errUncleIsAncestor
+		}
+		if ancestors[common.BytesToHash(uncle.ParentHash)] == nil || uncle.ParentHash.String() == block.Header.ParentHash.String() {
+			return errDanglingUncle
+		}
+	}
+	return nil
+}
+
+// CommitUncle adds the given block to uncle block set, returns error if failed to add.
+func (bc *BlockChain) CommitUncle(uncle *types.Header) error {
+	hash := uncle.Hash()
+	if bc.uncles.Contains(common.BytesToHash(hash.Bytes())) {
+		return errors.New("uncle not unique")
+	}
+	if common.BytesToHash(bc.latestBlock.Header.ParentHash.Bytes()) == common.BytesToHash(uncle.ParentHash.Bytes()) {
+		return errors.New("uncle is sibling")
+	}
+	if !bc.ancestors.Contains(common.BytesToHash(uncle.ParentHash.Bytes())) {
+		return errors.New("uncle's parent unknown")
+	}
+	if bc.family.Contains(common.BytesToHash(hash.Bytes())) {
+		return errors.New("uncle already included")
+	}
+	bc.uncles.Add(common.BytesToHash(uncle.Hash().Bytes()))
+	return nil
+}
+
 func (bc *BlockChain) registerEventHandlers() {
 	events.NewNetworkBlock.Subscribe("blockchain", func(data events.BlockWithTd) {
 		block := data.Block
@@ -128,6 +209,10 @@ func (bc *BlockChain) registerEventHandlers() {
 				return
 			} else if !errors.Is(err, types.ErrNotContiguous) {
 				bc.Logger.Info("discard block from network", "err", err, "block", block.Hash(), "header", block.Header)
+
+				if err := bc.CommitUncle(block.Header); err == nil {
+					bc.LocalUncles[common.BytesToHash(block.Header.Hash().Bytes())] = block
+				}
 				return
 			}
 		}

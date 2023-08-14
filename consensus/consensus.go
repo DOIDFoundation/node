@@ -3,6 +3,7 @@ package consensus
 import (
 	crand "crypto/rand"
 	"encoding/binary"
+	"github.com/ethereum/go-ethereum/common"
 	"math"
 	"math/big"
 	"math/rand"
@@ -35,6 +36,11 @@ type Consensus struct {
 	current  *types.Block // current working block
 	target   *big.Int     // current difficulty target
 }
+
+var (
+	// staleThreshold is the maximum depth of the acceptable stale block.
+	staleThreshold = 7
+)
 
 func New(chain *core.BlockChain, txpool *mempool.Mempool, logger log.Logger) *Consensus {
 	consensus := &Consensus{
@@ -281,6 +287,31 @@ func (c *Consensus) commitWork() {
 	block.Txs = result.Txs
 	block.Receipts = result.Receipts
 
+	// Accumulate the uncles for the current block
+	uncles := make([]*types.Header, 0, 2)
+	commitUncles := func(blocks map[common.Hash]*types.Block) {
+		// Clean up stale uncle blocks first
+		for hash, uncle := range blocks {
+			if uncle.Header.Height.Uint64()+uint64(staleThreshold) <= header.Height.Uint64() {
+				delete(blocks, hash)
+			}
+		}
+		for hash, uncle := range blocks {
+			if len(uncles) == 2 {
+				break
+			}
+			if err := c.chain.CommitUncle(uncle.Header); err != nil {
+				c.Logger.Info("Possible uncle rejected", "hash", hash, "reason", err)
+			} else {
+				c.Logger.Debug("Committing new uncle to block", "hash", hash)
+				uncles = append(uncles, uncle.Header)
+			}
+		}
+	}
+	// Prefer to locally generated uncle
+	commitUncles(c.chain.LocalUncles)
+
+	block.Uncles = uncles
 	c.current = block
 
 	select {
