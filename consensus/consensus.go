@@ -255,6 +255,7 @@ func (c *Consensus) newWorkLoop() {
 }
 
 func (c *Consensus) commitWork() {
+	// @todo this can be optimized by only simulating txs when pending txs changed
 	txs := c.txpool.Pending()
 	result, err := c.chain.Simulate(txs)
 	if err != nil {

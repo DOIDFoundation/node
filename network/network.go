@@ -54,6 +54,7 @@ type Network struct {
 }
 
 func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
+	initConstants()
 	network := &Network{
 		blockChain: chain,
 
