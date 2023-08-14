@@ -13,7 +13,7 @@
 ```
 git clone https://github.com/DOIDFoundation/node
 cd node
-go run ./cmd/doidnode start --home /tmp/doid-node-home
+go run ./cmd/doidnode start --testnet
 ```
 
 ### Flags
@@ -31,15 +31,22 @@ Flags:
   -m, --mine.enabled             Enable mining
       --mine.miner string        Miner address to be included in mined blocks
       --mine.threads uint        Number of threads to start mining, 0 indicates number of logical CPUs
-      --p2p.addr string          Libp2p listen address (default "/ip4/127.0.0.1/tcp/26667")
+      --p2p.addr strings         Libp2p listen address (default [/ip4/0.0.0.0/tcp/26667,/ip4/0.0.0.0/udp/26667/quic])
       --p2p.key string           Private key to generate libp2p peer identity
       --p2p.keyfile string       Private key file to generate libp2p peer identity (default "p2p.key")
-  -r, --p2p.rendezvous string    Libp2p rendezvous string used for peer discovery (default "doidnode")
+  -r, --p2p.rendezvous string    Libp2p rendezvous string used for peer discovery, do not change this unless you need a private network (default "doidnode")
       --rpc.http.addr string     RPC over HTTP listen address (default "127.0.0.1:8556")
       --rpc.http.enabled         Enable RPC over http
       --rpc.ws.addr string       RPC over websocket listen address (default "127.0.0.1:8557")
       --rpc.ws.enabled           Enable RPC over websocket
       --rpc.ws.origins strings   Origins from which to accept websockets requests (default [*])
+
+Global Flags:
+      --home string               directory for config and data (default "/Users/xeroo/.doidnode")
+      --log.level string          level of logging, can be debug, info, error, none or comma-separated list of module:level pairs with an optional *:level pair (* means all other modules). e.g. 'consensus:debug,mempool:debug,*:error' (default "info")
+      --networkid int8            Explicitly set network id, (For testnets: use --testnet instead) (default 1)
+      --testnet                   Start from testnet
+      --trace                     print out full stack trace on errors
 ```
 
 ### Build
