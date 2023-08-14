@@ -46,7 +46,9 @@ func (api *PublicTransactionPoolAPI) Sign(input json.RawMessage) (string, error)
 	if err := json.Unmarshal(input, &args); err != nil {
 		return "", err
 	}
-	message := crypto.Keccak256((append([]byte(args.DOID), args.Owner...)))
+	chainId := []byte("1")
+	message := append(chainId, []byte(args.DOID)...)
+	message = crypto.Keccak256((append(message, args.Owner...)))
 	var priv struct {
 		Prv types.HexBytes `json:"Prv" gencodec:"required"`
 	}
