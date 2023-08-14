@@ -7,6 +7,7 @@ import (
 
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/events"
+	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/transactor"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/DOIDFoundation/node/types/tx"
@@ -46,8 +47,7 @@ func (api *PublicTransactionPoolAPI) Sign(input json.RawMessage) (string, error)
 	if err := json.Unmarshal(input, &args); err != nil {
 		return "", err
 	}
-	chainId := []byte("1")
-	message := append(chainId, []byte(args.DOID)...)
+	message := append([]byte(flags.NetworkId), []byte(args.DOID)...)
 	message = crypto.Keccak256((append(message, args.Owner...)))
 	var priv struct {
 		Prv types.HexBytes `json:"Prv" gencodec:"required"`

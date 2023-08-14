@@ -3,13 +3,13 @@ package transactor
 import (
 	"bytes"
 
+	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
 func ValidateDoidNameSignatrue(doidName string, singer types.Address, signature []byte) bool {
-	chainId := "1"
-	message := append([]byte(chainId), []byte(doidName)...)
+	message := append([]byte(flags.NetworkId), []byte(doidName)...)
 	message = crypto.Keccak256(message, singer)
 	recovered, err := crypto.SigToPub(message, signature)
 	if err != nil {
