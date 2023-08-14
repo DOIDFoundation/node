@@ -50,11 +50,13 @@ Global Flags:
 ```
 
 ### Build
+
 ```
 make doidnode
 ```
 
 #### Cross compiling
+
 ```
 make linux-amd64
 ```
@@ -62,7 +64,9 @@ make linux-amd64
 Available targets are "linux-386 linux-amd64 linux-arm64 windows-386 windows-amd64 darwin-amd64 darwin-arm64"
 
 #### Enable sqlite support
+
 Sqlite is used to store blocks by miner
+
 ```
 BUILD_TAGS=sqlite make doidnode
 ```
@@ -75,6 +79,8 @@ curl -v -s 'localhost:26657' -H "Content-Type: application/json" -X POST --data 
 
 # get node status
 curl -v -s 'localhost:26657' -H "Content-Type: application/json" -X POST --data '{"jsonrpc":"2.0","id":1,"method":"node_status"}'
+
+{"jsonrpc":"2.0","id":1,"result":{"is_runing":true,"network_id":"2"}}
 ```
 
 ### test private key
@@ -101,7 +107,7 @@ response
 ### sign
 
 ```
-sig = crypto.sign(bytes(doidname) + bytes(owner), privatekey)
+sig = crypto.sign(bytes(chainId) + bytes(doidname) + bytes(owner), privatekey)
 ```
 
 request
@@ -113,7 +119,7 @@ curl -s 'localhost:8556' -H "Content-Type: application/json" -X POST --data '{"j
 response
 
 ```
-{"jsonrpc":"2.0","id":1,"result":"506f3bd07f7015be3495861d5548bca597f3a35ff81df122d0b08ebbbb2aefa52f9aa5bd3b38824d18cd8cce73c35a88518222d7f75f0b6360039f72081701ab01"}
+{"jsonrpc":"2.0","id":1,"result":"e26eea319b85fd9bd783a285e03ebb1387c564666a17e042bd96372ea4a76d4b54ce46d6eab877234af75398f7dd87a52aa4d1880d10ef28d50f40cde8c35b1501"}
 ```
 
 ### get owner by doidname
