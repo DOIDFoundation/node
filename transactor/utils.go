@@ -1,5 +1,24 @@
 package transactor
 
+import (
+	"bytes"
+
+	"github.com/DOIDFoundation/node/config"
+	"github.com/DOIDFoundation/node/types"
+	"github.com/ethereum/go-ethereum/crypto"
+)
+
+func ValidateDoidNameSignatrue(doidName string, singer types.Address, signature []byte) bool {
+	message := append([]byte{config.NetworkID}, []byte(doidName)...)
+	message = crypto.Keccak256(message, singer)
+	recovered, err := crypto.SigToPub(message, signature)
+	if err != nil {
+		return false
+	}
+	recoveredAddr := crypto.PubkeyToAddress(*recovered)
+	return bytes.Equal(recoveredAddr.Bytes(), singer.Bytes())
+}
+
 func ValidateDoidName(s string, valid int) bool {
 	length := getStringLength(s)
 	if length <= valid {
