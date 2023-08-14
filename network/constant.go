@@ -3,8 +3,7 @@ package network
 import (
 	"fmt"
 
-	"github.com/DOIDFoundation/node/flags"
-	"github.com/spf13/viper"
+	"github.com/DOIDFoundation/node/config"
 )
 
 var ProtocolID,
@@ -20,7 +19,7 @@ const (
 )
 
 func initConstants() {
-	networkId := viper.GetInt(flags.NetworkId)
+	networkId := config.NetworkID
 	version := 1
 
 	ProtocolID = fmt.Sprintf("/doid/%d/network/%d", networkId, version)

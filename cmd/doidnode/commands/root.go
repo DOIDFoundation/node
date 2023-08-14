@@ -35,11 +35,9 @@ func RootCmdExecutor() cli.Executable {
 	executor := cli.PrepareBaseCmd(RootCmd, "DOID", os.ExpandEnv(filepath.Join("$HOME", ".doidnode")))
 	// initialize network flags
 	RootCmd.PersistentFlags().Bool(flags.Testnet, false, "Start from testnet")
-	RootCmd.PersistentFlags().Int8(flags.NetworkId, 1, "Explicitly set network id, (For testnets: use --testnet instead)")
+	RootCmd.PersistentFlags().Int8(flags.NetworkID, 1, "Explicitly set network id, (For testnets: use --testnet instead)")
 	// initialize logging flags
 	RootCmd.PersistentFlags().String(flags.Log_Level, "info", "level of logging, can be debug, info, error, none or comma-separated list of module:level pairs with an optional *:level pair (* means all other modules). e.g. 'consensus:debug,mempool:debug,*:error'")
-	RootCmd.PersistentFlags().Bool(flags.Debug_PProf, false, "Enable the pprof HTTP server")
-	RootCmd.PersistentFlags().String(flags.Debug_PProfAddr, "127.0.0.1:6060", "pprof HTTP server listening interface")
 	RootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) (err error) {
 		// cmd.Flags() includes flags from this command and all persistent flags from the parent
 		if err := viper.BindPFlags(cmd.Flags()); err != nil {
@@ -66,9 +64,9 @@ func RootCmdExecutor() cli.Executable {
 		case viper.GetBool(flags.Testnet):
 			network = "testnet"
 			networkName = "test network"
-			viper.Set(flags.NetworkId, 2)
-		case viper.GetInt(flags.NetworkId) != 1:
-			network = fmt.Sprint(viper.GetInt(flags.NetworkId))
+			viper.Set(flags.NetworkID, 2)
+		case viper.GetInt(flags.NetworkID) != 1:
+			network = fmt.Sprint(viper.GetInt(flags.NetworkID))
 			networkName = "private network"
 		}
 
@@ -86,7 +84,7 @@ func RootCmdExecutor() cli.Executable {
 		}
 
 		logger.Info("start "+networkName, "home", viper.GetString(flags.Home),
-			"networkid", viper.GetInt(flags.NetworkId),
+			"networkid", viper.GetInt(flags.NetworkID),
 			"config", viper.ConfigFileUsed(),
 			"loglevel", viper.GetString(flags.Log_Level))
 

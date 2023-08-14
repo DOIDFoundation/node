@@ -7,9 +7,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DOIDFoundation/node/config"
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/types"
+	"github.com/DOIDFoundation/node/types/tx"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
 )
@@ -75,6 +77,10 @@ func (pool *Mempool) registerEventHandlers() {
 		header = block.Header
 	})
 	onTx := func(data types.Tx) {
+		if networkId := tx.ChainId(data); networkId != config.NetworkID {
+			pool.Logger.Debug("discard transaction, chain id mismatch", "networkId", networkId)
+			return
+		}
 		err := pool.AddLocal(data)
 		if err != nil {
 			pool.Logger.Error("failed to add transaction", "err", err)

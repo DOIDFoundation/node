@@ -6,7 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-func GenesisHeader(networkId int) *Header {
+func GenesisHeader(networkId byte) *Header {
 	switch networkId {
 	case 1:
 		panic("mainnet not launched, start with flag --testnet")
