@@ -1,7 +1,6 @@
 package network
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"math/big"
@@ -20,12 +19,11 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/multiformats/go-multistream"
 	"github.com/spf13/viper"
 )
 
@@ -93,7 +91,7 @@ func (d *discovery) pubsubDiscover() {
 			return
 		}
 		peer := msg.GetFrom()
-		if updated, err := updatePeerState(d.host.Peerstore(), peer, peerState); updated == true {
+		if updated, err := updatePeerState(d.host.Peerstore(), peer, peerState); updated {
 			logger.Debug("pubsub found peer", "peer", peer, "state", peerState)
 			eventPeerState.Send(peer)
 		} else if err != nil {
@@ -149,35 +147,6 @@ func (d *discovery) HandlePeerFound(pi peer.AddrInfo) {
 	}
 	d.Logger.Debug("mdns found peer", "peer", pi)
 	d.host.Connect(ctx, pi)
-	// peerNotifier <- pi
-}
-
-func (n *Network) notifyPeerFoundEvent() {
-	for {
-		pi := <-peerNotifier
-
-		go func() {
-			ctx, cancel := context.WithTimeout(ctx, time.Second*5) // @todo add a config/flag for this timeout
-			defer cancel()
-			stream, err := n.host.NewStream(ctx, pi.ID, protocol.ID(ProtocolState))
-			if err != nil {
-				if errors.Is(err, multistream.ErrNotSupported[protocol.ID]{}) {
-					// n.Logger.Debug("protocol not supported", "err", err, "peer", pi)
-					if !n.host.ConnManager().IsProtected(pi.ID, "bootstrap") &&
-						len(n.host.Network().Conns()) > MaxBackupBootstrapSize {
-						n.host.Network().ClosePeer(pi.ID)
-					}
-				}
-				//  else {
-				// 	n.Logger.Debug("failed to create stream", "err", err, "peer", pi)
-				// }
-				return
-			}
-			n.Logger.Debug("stream established", "peer", pi)
-			n.stateHandler(stream)
-			stream.Close()
-		}()
-	}
 }
 
 func (d *discovery) bootstrapPeers() (addrs []peer.AddrInfo) {
@@ -262,12 +231,11 @@ func (d *discovery) setupDiscover() {
 			d.Logger.Error("failed to find peers", "err", err)
 		} else {
 			for p := range peers {
-				if p.ID == d.host.ID() || len(p.Addrs) == 0 {
+				if p.ID == d.host.ID() || len(p.Addrs) == 0 || d.host.Network().Connectedness(p.ID) == network.Connected {
 					continue
 				}
 				d.Logger.Debug("dht found peer", "peer", p)
 				d.host.Connect(ctx, p)
-				// peerNotifier <- p
 			}
 		}
 
