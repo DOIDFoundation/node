@@ -1,6 +1,7 @@
 package node
 
 import (
+	"github.com/DOIDFoundation/node/config"
 	"github.com/DOIDFoundation/node/rpc"
 )
 
@@ -8,8 +9,13 @@ type API struct {
 	node *Node
 }
 
-func (api *API) Status() map[string]bool {
-	return map[string]bool{"is_running": api.node.IsRunning()}
+type NodeStatus struct {
+	IsRuning  bool `json:"is_runing"`
+	NetworkId byte `json:"network_id"`
+}
+
+func (api *API) Status() NodeStatus {
+	return NodeStatus{IsRuning: api.node.IsRunning(), NetworkId: config.NetworkID}
 }
 
 func RegisterAPI(node *Node) {

@@ -4,6 +4,10 @@ const (
 	Home  = "home"
 	Trace = "trace"
 
+	Mainnet   = "mainnet"
+	Testnet   = "testnet"
+	NetworkID = "networkid"
+
 	DB_Engine = "db.engine"
 
 	Log_Level = "log.level"

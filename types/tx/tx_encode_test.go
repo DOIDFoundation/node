@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/DOIDFoundation/node/types/tx"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,7 +25,7 @@ func TestEmptyTx(t *testing.T) {
 }
 
 func TestTxRegister(t *testing.T) {
-	should, _ := hex.DecodeString("cc808ac984646f696480808080")
+	should, _ := hex.DecodeString("000000c784646f69648080")
 	// encode
 	txe, err := tx.NewTx(&tx.Register{DOID: "doid"})
 	assert.NoError(t, err)
@@ -32,6 +33,14 @@ func TestTxRegister(t *testing.T) {
 
 	// decode
 	txp, err := tx.Decode(should)
+	if !assert.NoError(t, err) {
+		t.FailNow()
+	}
+	assert.NotNil(t, txp)
+	assert.NotNil(t, txp.(*tx.Register))
+
+	// decode old version
+	txp, err = tx.Decode(hexutil.MustDecode("0xca8088c784646f69648080"))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}

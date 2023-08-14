@@ -1,13 +1,11 @@
 package transactor
 
 import (
-	"bytes"
 	"errors"
 
 	"github.com/DOIDFoundation/node/types"
 	"github.com/DOIDFoundation/node/types/tx"
 	"github.com/cosmos/iavl"
-	"github.com/ethereum/go-ethereum/crypto"
 )
 
 type Register struct{}
@@ -37,16 +35,12 @@ func (r *Register) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
 		return errors.New("doidname has already been registered")
 	}
 
-	message := crypto.Keccak256(append([]byte(args.DOID), args.Owner...))
-	recovered, err := crypto.SigToPub(message, args.Signature)
-	if err != nil {
-		return errors.New("invalid args: Signature")
-	}
-	recoveredAddr := crypto.PubkeyToAddress(*recovered)
-	if !bytes.Equal(recoveredAddr.Bytes(), args.Owner.Bytes()) {
+	valid := ValidateDoidNameSignatrue(args.DOID, args.Owner, args.Signature)
+	if valid {
+		return nil
+	} else {
 		return errors.New("invalid signature")
 	}
-	return nil
 }
 
 func (r *Register) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, error) {

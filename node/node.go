@@ -3,6 +3,7 @@ package node
 import (
 	"errors"
 
+	"github.com/DOIDFoundation/node/config"
 	"github.com/DOIDFoundation/node/consensus"
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/doid"
@@ -35,6 +36,7 @@ type Option func(*Node)
 
 // NewNode returns a new, ready to go, CometBFT Node.
 func NewNode(logger log.Logger, options ...Option) (*Node, error) {
+	config.Init()
 	chain, err := core.NewBlockChain(logger)
 	if err != nil {
 		return nil, err

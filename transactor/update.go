@@ -7,7 +7,6 @@ import (
 	"github.com/DOIDFoundation/node/types"
 	"github.com/DOIDFoundation/node/types/tx"
 	"github.com/cosmos/iavl"
-	"github.com/ethereum/go-ethereum/crypto"
 )
 
 type Update struct{}
@@ -32,16 +31,12 @@ func (u *Update) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
 		return errors.New("update to same owner")
 	}
 
-	message := crypto.Keccak256(append([]byte(args.DOID), args.Owner...))
-	recovered, err := crypto.SigToPub(message, args.Signature)
-	if err != nil {
-		return errors.New("invalid args: Signature")
-	}
-	recoveredAddr := crypto.PubkeyToAddress(*recovered)
-	if !bytes.Equal(recoveredAddr.Bytes(), args.Owner.Bytes()) {
+	valid := ValidateDoidNameSignatrue(args.DOID, args.Owner, args.Signature)
+	if valid {
+		return nil
+	} else {
 		return errors.New("invalid signature")
 	}
-	return nil
 }
 
 func (u *Update) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, error) {

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/DOIDFoundation/node/config"
 	"github.com/DOIDFoundation/node/events"
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/store"
@@ -18,7 +19,6 @@ import (
 	"github.com/cometbft/cometbft/libs/log"
 	cosmosdb "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/iavl"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/spf13/viper"
 )
 
@@ -94,12 +94,7 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 	block := bc.blockStore.ReadHeadBlock()
 	if block == nil {
 		bc.Logger.Info("no head block found, generate from genesis")
-		block = types.NewBlockWithHeader(&types.Header{
-			Difficulty: big.NewInt(0x1000000),
-			Height:     big.NewInt(1), // starts from 1 because iavl can not go back to zero
-			Root:       hexutil.MustDecode("0xE3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"),
-			TxHash:     hexutil.MustDecode("0xE3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"),
-		})
+		block = types.NewBlockWithHeader(types.GenesisHeader(config.NetworkID))
 		bc.latestTD = new(big.Int)
 		bc.writeBlockAndTd(block)
 		bc.blockStore.WriteHashByHeight(block.Header.Height.Uint64(), block.Hash(), block.Header.Miner)

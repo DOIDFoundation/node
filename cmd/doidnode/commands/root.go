@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -32,6 +33,10 @@ func RootCmdExecutor() cli.Executable {
 	)
 	// initialize env, home and trace flags
 	executor := cli.PrepareBaseCmd(RootCmd, "DOID", os.ExpandEnv(filepath.Join("$HOME", ".doidnode")))
+	// initialize network flags
+	RootCmd.PersistentFlags().Bool(flags.Testnet, false, "Start from testnet")
+	RootCmd.PersistentFlags().Int8(flags.NetworkID, 1, "Explicitly set network id, (For testnets: use --testnet instead)")
+	// initialize logging flags
 	RootCmd.PersistentFlags().String(flags.Log_Level, "info", "level of logging, can be debug, info, error, none or comma-separated list of module:level pairs with an optional *:level pair (* means all other modules). e.g. 'consensus:debug,mempool:debug,*:error'")
 	RootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) (err error) {
 		// cmd.Flags() includes flags from this command and all persistent flags from the parent
@@ -46,22 +51,40 @@ func RootCmdExecutor() cli.Executable {
 		viper.AddConfigPath(filepath.Join(homeDir, "config")) // search root directory /config
 
 		// If a config file is found, read it in.
-		if err := viper.ReadInConfig(); err == nil {
-			// stderr, so if we redirect output to json file, this doesn't appear
-			// fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
-		} else if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			// ignore not found error, return other errors
-			return err
-		}
-
-		if viper.GetString(flags.Home) == "." {
-			path, err := filepath.Abs(".")
-			if err != nil {
+		if err := viper.ReadInConfig(); err != nil {
+			if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+				// ignore not found error, return other errors
 				return err
 			}
+		}
+
+		network := "mainnet"
+		networkName := "main network"
+		switch {
+		case viper.GetBool(flags.Testnet):
+			network = "testnet"
+			networkName = "test network"
+			viper.Set(flags.NetworkID, 2)
+		case viper.GetInt(flags.NetworkID) != 1:
+			network = fmt.Sprint(viper.GetInt(flags.NetworkID))
+			networkName = "private network"
+		}
+
+		if homeDir = viper.GetString(flags.Home); homeDir == "." {
+			// translate relative path to absolute path
+			if path, err := filepath.Abs("."); err == nil {
+				viper.Set(flags.Home, path)
+			} else {
+				return err
+			}
+		} else if homeDir == cmd.Flag(flags.Home).DefValue && network != "mainnet" {
+			// if home flag is not equal to default value, append with network name
+			path := filepath.Join(homeDir, network)
 			viper.Set(flags.Home, path)
 		}
-		logger.Info("start", "home", viper.GetString(flags.Home),
+
+		logger.Info("start "+networkName, "home", viper.GetString(flags.Home),
+			"networkid", viper.GetInt(flags.NetworkID),
 			"config", viper.ConfigFileUsed(),
 			"loglevel", viper.GetString(flags.Log_Level))
 

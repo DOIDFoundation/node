@@ -1,4 +1,5 @@
 home = "."
+testnet = true
 [log]
 level = "consensus:info,*:debug"
 [mine]
