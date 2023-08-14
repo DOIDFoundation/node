@@ -1,7 +1,9 @@
 package node
 
 import (
-	"github.com/DOIDFoundation/node/flags"
+	"fmt"
+
+	"github.com/DOIDFoundation/node/config"
 	"github.com/DOIDFoundation/node/rpc"
 )
 
@@ -15,7 +17,7 @@ type NodeStatus struct {
 }
 
 func (api *API) Status() NodeStatus {
-	return NodeStatus{IsRuning: api.node.IsRunning(), NetworkId: flags.NetworkId}
+	return NodeStatus{IsRuning: api.node.IsRunning(), NetworkId: fmt.Sprint(config.NetworkID)}
 }
 
 func RegisterAPI(node *Node) {
