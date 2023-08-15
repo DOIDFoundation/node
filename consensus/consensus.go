@@ -3,6 +3,8 @@ package consensus
 import (
 	crand "crypto/rand"
 	"encoding/binary"
+	"errors"
+	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/ethereum/go-ethereum/common"
 	"math"
 	"math/big"
@@ -26,15 +28,25 @@ var two256 = new(big.Int).Exp(big.NewInt(2), big.NewInt(256), big.NewInt(0))
 
 type Consensus struct {
 	service.BaseService
-	wg       sync.WaitGroup
-	abort    chan struct{}
-	miner    types.Address
-	taskCh   chan struct{}
-	resultCh chan *types.Block
-	chain    *core.BlockChain
-	txpool   *mempool.Mempool
-	current  *types.Block // current working block
-	target   *big.Int     // current difficulty target
+	wg         sync.WaitGroup
+	abort      chan struct{}
+	miner      types.Address
+	taskCh     chan struct{}
+	resultCh   chan *types.Block
+	chain      *core.BlockChain
+	txpool     *mempool.Mempool
+	current    *types.Block // current working block
+	target     *big.Int     // current difficulty target
+	currentEnv *environment // An environment for current running cycle.
+}
+
+// environment is the consensus's current environment and holds all of the current state information.
+type environment struct {
+	ancestors mapset.Set[common.Hash] // ancestor set (used for checking uncle parent validity)
+	family    mapset.Set[common.Hash] // family set (used for checking uncle invalidity)
+	uncles    mapset.Set[common.Hash] // uncle set
+
+	header *types.Header
 }
 
 var (
@@ -260,6 +272,25 @@ func (c *Consensus) newWorkLoop() {
 	}
 }
 
+// CommitUncle adds the given block to uncle block set, returns error if failed to add.
+func (c *Consensus) CommitUncle(env *environment, uncle *types.Header) error {
+	hash := uncle.Hash()
+	if env.uncles.Contains(common.BytesToHash(hash.Bytes())) {
+		return errors.New("uncle not unique")
+	}
+	if common.BytesToHash(env.header.ParentHash.Bytes()) == common.BytesToHash(uncle.ParentHash.Bytes()) {
+		return errors.New("uncle is sibling")
+	}
+	if !env.ancestors.Contains(common.BytesToHash(uncle.ParentHash.Bytes())) {
+		return errors.New("uncle's parent unknown")
+	}
+	if env.family.Contains(common.BytesToHash(hash.Bytes())) {
+		return errors.New("uncle already included")
+	}
+	env.uncles.Add(common.BytesToHash(uncle.Hash().Bytes()))
+	return nil
+}
+
 func (c *Consensus) commitWork() {
 	// @todo this can be optimized by only simulating txs when pending txs changed
 	txs := c.txpool.Pending()
@@ -288,6 +319,23 @@ func (c *Consensus) commitWork() {
 	block.Txs = result.Txs
 	block.Receipts = result.Receipts
 
+	env := &environment{
+		ancestors: mapset.NewSet[common.Hash](),
+		family:    mapset.NewSet[common.Hash](),
+		uncles:    mapset.NewSet[common.Hash](),
+		header:    header,
+	}
+
+	// when 08 is processed ancestors contain 07 (quick block)
+	for _, ancestor := range c.chain.GetBlocksFromHash(parent.Header.Height.Uint64(), parent.Hash(), 7) {
+		for _, uncle := range ancestor.Uncles {
+			env.family.Add(common.BytesToHash(uncle.Hash()))
+		}
+		env.family.Add(common.BytesToHash(ancestor.Hash()))
+		env.ancestors.Add(common.BytesToHash(ancestor.Hash()))
+	}
+	c.currentEnv = env
+
 	// Accumulate the uncles for the current block
 	uncles := make([]*types.Header, 0, 2)
 	commitUncles := func(blocks map[common.Hash]*types.Block) {
@@ -301,7 +349,7 @@ func (c *Consensus) commitWork() {
 			if len(uncles) == 2 {
 				break
 			}
-			if err := c.chain.CommitUncle(uncle.Header); err != nil {
+			if err := c.CommitUncle(c.currentEnv, uncle.Header); err != nil {
 				c.Logger.Info("Possible uncle rejected", "hash", hash, "reason", err)
 			} else {
 				c.Logger.Debug("Committing new uncle to block", "hash", hash)

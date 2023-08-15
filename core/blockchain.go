@@ -51,9 +51,6 @@ type BlockChain struct {
 	stateDb cosmosdb.DB
 	state   *iavl.MutableTree
 
-	ancestors   mapset.Set[common.Hash]      // ancestor set (used for checking uncle parent validity)
-	family      mapset.Set[common.Hash]      // family set (used for checking uncle invalidity)
-	uncles      mapset.Set[common.Hash]      // uncle set
 	LocalUncles map[common.Hash]*types.Block // uncle set
 }
 
@@ -173,23 +170,23 @@ func (bc *BlockChain) VerifyUncles(block *types.Block) error {
 	return nil
 }
 
-// CommitUncle adds the given block to uncle block set, returns error if failed to add.
-func (bc *BlockChain) CommitUncle(uncle *types.Header) error {
-	hash := uncle.Hash()
-	if bc.uncles.Contains(common.BytesToHash(hash.Bytes())) {
-		return errors.New("uncle not unique")
+// GetBlocksFromHash returns the block corresponding to hash and up to n-1 ancestors.
+// [deprecated by eth/62]
+func (bc *BlockChain) GetBlocksFromHash(height uint64, hash types.Hash, n int) (blocks []*types.Block) {
+	number := bc.GetBlock(height, hash).Header.Height.Uint64()
+	if number == 0 {
+		return nil
 	}
-	if common.BytesToHash(bc.latestBlock.Header.ParentHash.Bytes()) == common.BytesToHash(uncle.ParentHash.Bytes()) {
-		return errors.New("uncle is sibling")
+	for i := 0; i < n; i++ {
+		block := bc.GetBlock(number, hash)
+		if block == nil {
+			break
+		}
+		blocks = append(blocks, block)
+		hash = block.Header.ParentHash
+		number--
 	}
-	if !bc.ancestors.Contains(common.BytesToHash(uncle.ParentHash.Bytes())) {
-		return errors.New("uncle's parent unknown")
-	}
-	if bc.family.Contains(common.BytesToHash(hash.Bytes())) {
-		return errors.New("uncle already included")
-	}
-	bc.uncles.Add(common.BytesToHash(uncle.Hash().Bytes()))
-	return nil
+	return
 }
 
 func (bc *BlockChain) registerEventHandlers() {
@@ -205,9 +202,8 @@ func (bc *BlockChain) registerEventHandlers() {
 			} else if !errors.Is(err, types.ErrNotContiguous) {
 				bc.Logger.Info("discard block from network", "err", err, "block", block.Hash(), "header", block.Header)
 
-				if err := bc.CommitUncle(block.Header); err == nil {
-					bc.LocalUncles[common.BytesToHash(block.Header.Hash().Bytes())] = block
-				}
+				bc.LocalUncles[common.BytesToHash(block.Header.Hash().Bytes())] = block
+
 				return
 			}
 		}

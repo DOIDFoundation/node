@@ -2,6 +2,8 @@ package types
 
 import (
 	"bytes"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"math/big"
 
 	"github.com/cometbft/cometbft/crypto/merkle"
@@ -129,10 +131,19 @@ func CalcDifficulty(time uint64, parent *Header) *big.Int {
 	//         (parent_diff / 2048 * max(1 - (block_timestamp - parent_timestamp) // 10, -99))
 	//        ) + 2^(periodCount - 2)
 
+	// diff = (parent_diff +
+	//         (parent_diff / 2048 * max((2 if len(parent.uncles) else 1) - ((timestamp - parent.timestamp) // 9), -99))
+	//        ) + 2^(periodCount - 2)
+
 	// 1 - (block_timestamp - parent_timestamp) // 10
 	x := new(big.Int).SetUint64(time - parent.Time)
 	x.Div(x, big10)
-	x.Sub(big1, x)
+
+	if common.BytesToHash(parent.UncleHash.Bytes()) == types.EmptyUncleHash {
+		x.Sub(big1, x)
+	} else {
+		x.Sub(big2, x)
+	}
 
 	// max(1 - (block_timestamp - parent_timestamp) // 10, -99)
 	if x.Cmp(bigMinus99) < 0 {
