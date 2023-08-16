@@ -54,6 +54,8 @@ type BlockChain struct {
 	LocalUncles map[common.Hash]*types.Block // uncle set
 }
 
+type Hash2 [32]byte
+
 func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 	bc := &BlockChain{
 		Logger: logger.With("module", "blockchain"),
@@ -202,14 +204,14 @@ func (bc *BlockChain) registerEventHandlers() {
 			} else if !errors.Is(err, types.ErrNotContiguous) {
 				bc.Logger.Info("discard block from network", "err", err, "block", block.Hash(), "header", block.Header)
 
-				bc.LocalUncles[common.BytesToHash(block.Header.Hash().Bytes())] = block
-
 				return
 			}
 		}
 		if data.Td.Cmp(bc.latestTD) > 0 {
 			bc.Logger.Info("better network td, maybe a fork", "block", block.Hash(), "header", block.Header, "td", data.Td)
 			events.ForkDetected.Send(struct{}{})
+		} else {
+			bc.LocalUncles[common.BytesToHash(block.Header.Hash().Bytes())] = block
 		}
 	})
 }
