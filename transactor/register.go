@@ -63,7 +63,7 @@ func (r *Register) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, erro
 		return resRejected, err
 	}
 
-	err = updateOwnerState(tree, register.Owner, register.DOID, true)
+	err = types.UpdateOwnerDOIDNames(tree, register.Owner, register.DOID, true)
 	if err != nil {
 		return resRejected, err
 	}

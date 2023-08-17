@@ -6,7 +6,6 @@ import (
 	"github.com/DOIDFoundation/node/transactor"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/DOIDFoundation/node/types/tx"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,15 +40,24 @@ func TestUpdate(t *testing.T) {
 
 	_owner, _ := state.Get(types.DOIDHash(doidname))
 	assert.EqualValues(t, _owner, owner2.Bytes())
-	ownerStateBytes, _ := state.Get(types.OwnerHash(owner))
-	ownerState := &types.OwnerState{}
-	rlp.DecodeBytes(ownerStateBytes, ownerState)
-	assert.EqualValues(t, ownerState.Names, [][]byte{})
+	names, _ := types.GetOwnerDOIDNames(state.ImmutableTree, owner.Bytes())
+	var namesBytes = [][]byte{}
+	for _, x := range names {
+		namesBytes = append(namesBytes, []byte(x))
+	}
+	assert.EqualValues(t, namesBytes, [][]byte{})
 
-	ownerStateBytes2, _ := state.Get(types.OwnerHash(owner2))
-	ownerState2 := &types.OwnerState{}
-	rlp.DecodeBytes(ownerStateBytes2, ownerState2)
-	tmp := []byte(doidname)
-	assert.EqualValues(t, ownerState2.Names, [][]byte{tmp})
+	names2, _ := types.GetOwnerDOIDNames(state.ImmutableTree, owner2.Bytes())
+	namesBytes = [][]byte{}
+	for _, x := range names2 {
 
+		namesBytes = append(namesBytes, []byte(x))
+	}
+	assert.EqualValues(t, namesBytes, [][]byte{[]byte(doidname)})
+
+	ret := []string{}
+	for _, v := range names2 {
+		ret = append(ret, string(v))
+	}
+	assert.EqualValues(t, ret, []string{doidname})
 }
