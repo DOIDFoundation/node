@@ -6,6 +6,7 @@ import (
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/DOIDFoundation/node/types"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 type DOIDApi struct {
@@ -28,6 +29,31 @@ func (api *DOIDApi) GetOwner(params DOIDName) (string, error) {
 	}
 	ownerAddress := hex.EncodeToString(owner)
 	return ownerAddress, nil
+}
+
+func (api *DOIDApi) GetOwnerDOIDNames(owner types.Hash) ([]string, error) {
+	ret := []string{}
+	state, err := api.chain.LatestState()
+	if err != nil {
+		return ret, err
+	}
+	ownerStateBytes, err := state.Get(types.OwnerHash(owner))
+	if err != nil {
+		return ret, err
+	}
+	if ownerStateBytes == nil {
+		return ret, err
+	}
+	ownerState := types.OwnerState{}
+	err = rlp.DecodeBytes(ownerStateBytes, ownerState)
+	if err != nil {
+		return ret, err
+	}
+
+	for i := 0; i < len(ownerState.Names); i++ {
+		ret = append(ret, hex.EncodeToString(ownerState.Names[i]))
+	}
+	return ret, nil
 }
 
 func RegisterAPI(chain *core.BlockChain) {

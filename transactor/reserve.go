@@ -60,5 +60,9 @@ func (r *Reserve) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, error
 	if err != nil {
 		return resRejected, err
 	}
+	err = updateOwnerState(tree, reserve.Owner, reserve.DOID, true)
+	if err != nil {
+		return resRejected, err
+	}
 	return resSuccess, nil
 }

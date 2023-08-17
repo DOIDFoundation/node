@@ -62,10 +62,16 @@ func (r *Register) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, erro
 	if err != nil {
 		return resRejected, err
 	}
+
+	err = updateOwnerState(tree, register.Owner, register.DOID, true)
+	if err != nil {
+		return resRejected, err
+	}
 	return resSuccess, nil
 }
 
 func init() {
 	registerTransactor(tx.TypeRegister, &Register{})
 	registerTransactor(tx.TypeReserve, &Reserve{})
+	registerTransactor(tx.TypeUpdate, &Update{})
 }
