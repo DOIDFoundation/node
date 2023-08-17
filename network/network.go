@@ -36,7 +36,6 @@ import (
 )
 
 var ctx, cancelCtx = context.WithCancel(context.Background())
-var peerNotifier = make(chan peer.AddrInfo)
 
 type Network struct {
 	service.BaseService
@@ -187,7 +186,6 @@ func (n *Network) OnStart() error {
 	n.host.SetStreamHandler(protocol.ID(ProtocolGetBlocks), n.getBlocksHandler)
 	n.host.SetStreamHandler(protocol.ID(ProtocolState), n.stateHandler)
 
-	go n.notifyPeerFoundEvent()
 	go n.registerBlockSubscribers()
 	go n.registerTxSubscribers()
 
