@@ -51,6 +51,7 @@ type BlockChain struct {
 	stateDb cosmosdb.DB
 	state   *iavl.MutableTree
 
+	muUncle     sync.Mutex
 	LocalUncles map[common.Hash]*types.Block // uncle set
 }
 
@@ -58,7 +59,8 @@ type Hash2 [32]byte
 
 func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 	bc := &BlockChain{
-		Logger: logger.With("module", "blockchain"),
+		Logger:      logger.With("module", "blockchain"),
+		LocalUncles: make(map[common.Hash]*types.Block),
 	}
 	failed := true
 	var err error
@@ -211,6 +213,10 @@ func (bc *BlockChain) registerEventHandlers() {
 			bc.Logger.Info("better network td, maybe a fork", "block", block.Hash(), "header", block.Header, "td", data.Td)
 			events.ForkDetected.Send(struct{}{})
 		} else {
+			bc.Logger.Info("into localUncle", "block", block.Hash(), "header", block.Header, "td", data.Td)
+
+			bc.muUncle.Lock()
+			defer bc.muUncle.Unlock()
 			bc.LocalUncles[common.BytesToHash(block.Header.Hash().Bytes())] = block
 		}
 	})
