@@ -2,11 +2,11 @@ package doid
 
 import (
 	"encoding/hex"
+	"fmt"
 
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/DOIDFoundation/node/types"
-	"github.com/ethereum/go-ethereum/rlp"
 )
 
 type DOIDApi struct {
@@ -37,21 +37,9 @@ func (api *DOIDApi) GetOwnerDOIDNames(owner types.Hash) ([]string, error) {
 	if err != nil {
 		return ret, err
 	}
-	ownerStateBytes, err := state.Get(types.OwnerHash(owner))
-	if err != nil {
-		return ret, err
-	}
-	if ownerStateBytes == nil {
-		return ret, err
-	}
-	ownerState := types.OwnerState{}
-	err = rlp.DecodeBytes(ownerStateBytes, ownerState)
-	if err != nil {
-		return ret, err
-	}
-
-	for i := 0; i < len(ownerState.Names); i++ {
-		ret = append(ret, hex.EncodeToString(ownerState.Names[i]))
+	names, _ := types.GetOwnerDOIDNames(state, owner)
+	for _, v := range names {
+		ret = append(ret, fmt.Sprint(v))
 	}
 	return ret, nil
 }

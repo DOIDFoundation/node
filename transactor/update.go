@@ -57,11 +57,11 @@ func (u *Update) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, error)
 	if err != nil {
 		return resRejected, err
 	}
-	err = updateOwnerState(tree, ownerBefore, update.DOID, false)
+	err = types.UpdateOwnerDOIDNames(tree, ownerBefore, update.DOID, false)
 	if err != nil {
 		return resRejected, err
 	}
-	err = updateOwnerState(tree, update.Owner, update.DOID, true)
+	err = types.UpdateOwnerDOIDNames(tree, update.Owner, update.DOID, true)
 	if err != nil {
 		return resRejected, err
 	}
