@@ -24,7 +24,7 @@ func OwnerStatePrefix() []byte {
 }
 
 func UpdateOwnerDOIDNames(tree *iavl.MutableTree, owner Address, name string, add bool) error {
-	if tree.Version() > 40000 && config.NetworkID == 2 {
+	if tree.Version() <= 104870 && config.NetworkID == 2 {
 		return nil
 	}
 	nameHash := DOIDHash(name)
