@@ -1,8 +1,6 @@
 package network
 
 import (
-	"fmt"
-
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
@@ -14,7 +12,7 @@ type API struct {
 
 type Status struct {
 	PeersInTopic peer.IDSlice `json:"peersInTopic"`
-	Connections  []string     `json:"connections"`
+	Connections  Connections  `json:"connections"`
 }
 
 func (api *API) Status() Status {
@@ -32,14 +30,20 @@ func (api *API) Peers() peer.IDSlice {
 	return api.net.host.Network().Peers()
 }
 
-func (api *API) Connections() (addrs []string) {
+type Connections struct {
+	Num         int                      `json:"num"`
+	Connections []map[string]interface{} `json:"connections"`
+}
+
+func (api *API) Connections() (c Connections) {
+	c.Num = len(api.net.host.Network().Conns())
 	for _, conn := range api.net.host.Network().Conns() {
-		if len(addrs) > 20 {
-			addrs = append(addrs, fmt.Sprintf("...(%d connections)", len(api.net.host.Network().Conns())))
-			break
-		}
 		a := peer.AddrInfo{ID: conn.RemotePeer(), Addrs: []multiaddr.Multiaddr{conn.RemoteMultiaddr()}}
-		addrs = append(addrs, a.String())
+		ret := a.Loggable()
+		if agentVersion, err := api.net.host.Peerstore().Get(a.ID, "AgentVersion"); err == nil {
+			ret["version"] = agentVersion
+		}
+		c.Connections = append(c.Connections, ret)
 	}
 	return
 }
