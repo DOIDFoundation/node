@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"container/list"
 	"math/big"
 
 	"github.com/DOIDFoundation/node/store"
@@ -38,7 +39,30 @@ func newHeaderChain(store *store.BlockStore, logger log.Logger) *HeaderChain {
 }
 
 func (hc *HeaderChain) CanStartFrom(height uint64, hash types.Hash) bool {
-	return hc.store.ReadTd(height, hash) != nil
+	headers := list.New()
+	for {
+		// append stored blocks when we found an ancestor in our chain
+		if hc.store.ReadTd(height, hash) != nil || (hc.last != nil && hc.last.Height.Uint64() == height) {
+			for e := headers.Front(); e != nil; e = e.Next() {
+				header := e.Value.(*lightHeader)
+				block := hc.store.ReadBlock(header.Height, header.Hash)
+				if err := hc.AppendBlocks([]*types.Block{block}); err != nil {
+					// can not append stored blocks
+					return false
+				}
+			}
+			return true
+		}
+		// check if we have block in store
+		header := hc.store.ReadHeader(height, hash)
+		if header == nil {
+			return false
+		}
+		// check if we have parents of this block
+		headers.PushFront(&lightHeader{header.Height.Uint64(), header.Hash(), header.Miner})
+		height = header.Height.Uint64() - 1
+		hash = header.ParentHash
+	}
 }
 
 func (hc *HeaderChain) getBlock(height uint64, hash types.Hash) *types.Block {

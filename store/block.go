@@ -89,6 +89,17 @@ func (bs *BlockStore) WriteBlock(block *types.Block) {
 	bs.WriteHeader(block.Header)
 }
 
+func (bs *BlockStore) DeleteBlock(height uint64, hash types.Hash) {
+	header := bs.ReadHeader(height, hash)
+	if header == nil {
+		return
+	}
+	bs.DeleteData(unclesKey(header.UncleHash))
+	bs.DeleteData(txsKey(header.TxHash))
+	bs.DeleteData(receiptsKey(header.ReceiptHash))
+	bs.DeleteHeader(height, hash)
+}
+
 // ReadHeader retrieves the block header corresponding to the hash.
 func (bs *BlockStore) ReadHeader(height uint64, hash types.Hash) *types.Header {
 	header := new(types.Header)
@@ -109,11 +120,15 @@ func (bs *BlockStore) WriteHeader(header *types.Header) {
 	bs.WriteHeightByHash(hash, height)
 }
 
+func (bs *BlockStore) DeleteHeader(height uint64, hash types.Hash) {
+	bs.DeleteData(headerKey(height, hash))
+}
+
 // ReadDataRLP retrieves the data in RLP encoding.
 func (bs *BlockStore) ReadDataRLP(hash types.Hash) rlp.RawValue {
 	bz, err := bs.db.Get(hash)
 	if err != nil {
-		bs.Logger.Error("failed to read block data", "err", err)
+		bs.Logger.Error("failed to read data by hash", "err", err, "hash", hash)
 		return nil
 	}
 
@@ -136,11 +151,18 @@ func (bs *BlockStore) WriteData(hash types.Hash, data interface{}) {
 	// Write the encoded data
 	bz, err := rlp.EncodeToBytes(data)
 	if err != nil {
-		bs.Logger.Error("failed to RLP encode header", "err", err)
+		bs.Logger.Error("failed to RLP encode data", "err", err)
 		panic(err)
 	}
 	if err := bs.db.Set(hash, bz); err != nil {
-		bs.Logger.Error("failed to store header by hash", "err", err)
+		bs.Logger.Error("failed to store data", "err", err)
+		panic(err)
+	}
+}
+
+func (bs *BlockStore) DeleteData(hash types.Hash) {
+	if err := bs.db.Delete(hash); err != nil {
+		bs.Logger.Error("failed to delete data by hash", "err", err, "hash", hash)
 		panic(err)
 	}
 }
