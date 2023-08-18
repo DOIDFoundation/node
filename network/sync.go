@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,7 +64,8 @@ func (s *syncService) sync() {
 func (s *syncService) doSync() bool {
 	ctx, cancel := context.WithTimeout(ctx, time.Second*15) // @todo add a config/flag for this timeout
 	defer cancel()
-	stream, err := s.host.NewStream(ctx, s.id, protocol.ID(ProtocolGetBlocks))
+	// @todo remove testnet legacy protocol id.
+	stream, err := s.host.NewStream(ctx, s.id, protocol.ID(ProtocolGetBlocks), protocol.ID(strings.Replace(ProtocolGetBlocks, "/doid/2/", "/doid/", 1)))
 	if err != nil {
 		s.Logger.Error("failed to create stream", "err", err)
 		s.dropPeer()
