@@ -139,10 +139,30 @@ func (s *syncService) getBlocks(stream network.Stream, height uint64, count uint
 }
 
 func (s *syncService) findAncestor(stream network.Stream, height uint64) uint64 {
+	localHeight := s.chain.LatestBlock().Header.Height
+	if localHeight.Uint64() == 1 {
+		s.Logger.Info("check if we need to start from genesis")
+		check := uint64(2)
+		blocks, err := s.getBlocks(stream, check, 1)
+		if err != nil {
+			s.Logger.Info("can not get block", "height", check)
+			return 0
+		}
+		b := blocks[0]
+		if !s.hc.CanStartFrom(check, b.Hash()) {
+			// we don't have this block, apply and set as ancestor
+			if err := s.hc.AppendBlocks([]*types.Block{b}); err != nil {
+				s.Logger.Debug("failed to append block", "err", err, "height", check)
+				s.dropPeer()
+				return 0
+			}
+			return check
+		}
+	}
 	s.Logger.Info("need to find ancestor", "till", height)
 	// try search 12x16 blocks backwards
 	check := uint64(1)
-	for count := uint64(1); count <= 12; count-- {
+	for count := uint64(1); count <= 12; count++ {
 		skip := count * 16
 		if height > skip {
 			check = height - skip

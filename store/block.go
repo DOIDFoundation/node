@@ -18,6 +18,11 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+var (
+	// ErrNotFound is returned when record not found.
+	ErrNotFound = errors.New("not found")
+)
+
 type BlockStore struct {
 	log.Logger
 	db      cmtdb.DB
@@ -104,7 +109,11 @@ func (bs *BlockStore) DeleteBlock(height uint64, hash types.Hash) {
 func (bs *BlockStore) ReadHeader(height uint64, hash types.Hash) *types.Header {
 	header := new(types.Header)
 	if err := bs.ReadData(headerKey(height, hash), header); err != nil {
-		bs.Logger.Error("invalid block header", "err", err, "height", height, "hash", hash)
+		if errors.Is(err, ErrNotFound) {
+			bs.Logger.Debug("block header not found", "height", height, "hash", hash)
+		} else {
+			bs.Logger.Error("invalid block header", "err", err, "height", height, "hash", hash)
+		}
 		return nil
 	}
 	return header
@@ -142,7 +151,7 @@ func (bs *BlockStore) ReadDataRLP(hash types.Hash) rlp.RawValue {
 func (bs *BlockStore) ReadData(hash types.Hash, result interface{}) error {
 	data := bs.ReadDataRLP(hash)
 	if len(data) == 0 {
-		return errors.New("empty data read")
+		return ErrNotFound
 	}
 	return rlp.DecodeBytes(data, result)
 }
