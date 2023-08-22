@@ -81,7 +81,7 @@ func (c *Consensus) registerEventHandlers() {
 			c.commitWork()
 		}
 	})
-	events.SyncStarted.Subscribe(c.String(), func(data struct{}) {
+	events.SyncStarted.Subscribe(c.String(), func() {
 		// Enter syncing, now stop mining.
 		if c.IsRunning() {
 			mu.Lock()
@@ -90,7 +90,7 @@ func (c *Consensus) registerEventHandlers() {
 			c.Reset()
 		}
 	})
-	events.SyncFinished.Subscribe(c.String(), func(data struct{}) {
+	events.SyncFinished.Subscribe(c.String(), func() {
 		// Sync finished, now start mining.
 		mu.Lock()
 		defer mu.Unlock()

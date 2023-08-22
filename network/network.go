@@ -228,8 +228,8 @@ func (n *Network) startSync() {
 		return
 	}
 	n.Logger.Info("start syncing")
-	events.SyncStarted.Send(struct{}{})
-	events.SyncFinished.Subscribe(n.String(), func(data struct{}) { n.stopSync() })
+	events.SyncStarted.Send()
+	events.SyncFinished.Subscribe(n.String(), func() { n.stopSync() })
 	n.sync = newSyncService(n.Logger, bestId, n.host, n.blockChain)
 	n.sync.Start()
 }
@@ -278,12 +278,12 @@ func (n *Network) registerEventHandlers() {
 			// peer connected but we do not need to sync
 			if n.sync == nil || !n.sync.IsRunning() {
 				once.Do(func() {
-					events.SyncFinished.Send(struct{}{})
+					events.SyncFinished.Send()
 				})
 			}
 		}
 	})
-	events.ForkDetected.Subscribe(n.String(), func(data struct{}) {
+	events.ForkDetected.Subscribe(n.String(), func() {
 		n.startSync()
 	})
 	events.NewMinedBlock.Subscribe(n.String(), func(data *types.Block) {

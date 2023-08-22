@@ -129,7 +129,7 @@ func (bc *BlockChain) registerEventHandlers() {
 		}
 		if data.Td.Cmp(bc.latestTD) > 0 {
 			bc.Logger.Info("better network td, maybe a fork", "block", block.Hash(), "header", block.Header, "td", data.Td)
-			events.ForkDetected.Send(struct{}{})
+			events.ForkDetected.Send()
 		}
 	})
 }

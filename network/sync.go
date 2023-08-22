@@ -57,7 +57,7 @@ func (s *syncService) dropPeer() {
 func (s *syncService) sync() {
 	defer s.wg.Done()
 	s.doSync()
-	events.SyncFinished.Send(struct{}{})
+	events.SyncFinished.Send()
 }
 
 func (s *syncService) doSync() bool {
