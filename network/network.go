@@ -230,12 +230,14 @@ func (n *Network) startSync() {
 	n.Logger.Info("start syncing")
 	events.SyncStarted.Send()
 	events.SyncFinished.Subscribe(n.String(), func() { n.stopSync() })
+	eventSyncFailed.Subscribe(n.String(), func() { n.stopSync(); n.startSync() })
 	n.sync = newSyncService(n.Logger, bestId, n.host, n.blockChain)
 	n.sync.Start()
 }
 
 func (n *Network) stopSync() {
 	events.SyncFinished.Unsubscribe(n.String())
+	eventSyncFailed.Unsubscribe(n.String())
 	if !n.syncing.CompareAndSwap(true, false) {
 		n.Logger.Debug("not stopping sync", "msg", "already stopped")
 		return
