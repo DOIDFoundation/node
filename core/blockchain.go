@@ -42,6 +42,7 @@ type BlockChain struct {
 }
 
 func NewBlockChain(logger log.Logger) (*BlockChain, error) {
+	config.Init()
 	bc := &BlockChain{
 		Logger: logger.With("module", "blockchain"),
 	}

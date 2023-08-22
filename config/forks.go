@@ -1,5 +1,9 @@
 package config
 
+func initDevnetForks() {
+	OwnerFork = 0
+}
+
 func initTestnetForks() {
 	OwnerFork = 104870
 }

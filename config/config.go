@@ -27,6 +27,8 @@ func IsTestnet() bool {
 func Init() {
 	NetworkID = Network(viper.GetInt(flags.NetworkID))
 	switch NetworkID {
+	case DevNet:
+		initDevnetForks()
 	case TestNet:
 		initTestnetForks()
 	}
