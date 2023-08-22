@@ -2,7 +2,6 @@ package network
 
 import (
 	"context"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,25 +40,20 @@ var ctx, cancelCtx = context.WithCancel(context.Background())
 type Network struct {
 	service.BaseService
 
-	host          host.Host
-	discovery     *discovery
-	pubsub        *pubsub.PubSub
-	topicBlock    topicWrapper
-	topicTx       topicWrapper
-	blockChain    *core.BlockChain
-	networkHeight *big.Int
-	syncing       atomic.Bool
-	sync          *syncService
-	peerPool      map[string]peer.AddrInfo
+	host       host.Host
+	discovery  *discovery
+	pubsub     *pubsub.PubSub
+	topicBlock topicWrapper
+	topicTx    topicWrapper
+	blockChain *core.BlockChain
+	syncing    atomic.Bool
+	sync       *syncService
 }
 
 func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	initConstants()
 	network := &Network{
 		blockChain: chain,
-
-		networkHeight: big.NewInt(0),
-		peerPool:      make(map[string]peer.AddrInfo),
 	}
 	network.BaseService = *service.NewBaseService(logger.With("module", "network"), "Network", network)
 

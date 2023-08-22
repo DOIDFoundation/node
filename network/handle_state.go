@@ -94,7 +94,7 @@ func (n *Network) stateHandler(s network.Stream) {
 	}
 
 	peer := s.Conn().RemotePeer()
-	if updated, err := updatePeerState(n.host.Peerstore(), peer, peerState); updated == true {
+	if updated, err := updatePeerState(n.host.Peerstore(), peer, peerState); updated {
 		logger.Debug("peer state updated", "peer", peer, "state", peerState)
 		eventPeerState.Send(peer)
 	} else if err != nil {
