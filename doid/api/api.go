@@ -1,10 +1,12 @@
-package doid
+package doidapi
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/DOIDFoundation/node/core"
+	"github.com/DOIDFoundation/node/doid"
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/DOIDFoundation/node/types"
 )
@@ -18,12 +20,34 @@ type DOIDName struct {
 	Owner types.Hash `json:"owner"`
 }
 
+// Status checks if a name is registered or available or reserved for registration
+func (api *DOIDApi) Status(DOID string) (string, error) {
+	state, err := api.chain.LatestState()
+	if err != nil {
+		return "", err
+	}
+	if owner, err := state.Get(doid.DOIDHash(DOID)); err != nil {
+		return "", err
+	} else if owner != nil {
+		return "registered", nil
+	}
+	err = doid.ValidateDoidName(DOID, doid.ClassCNameLength)
+	switch {
+	case err == nil:
+		return "available", nil
+	case errors.Is(err, doid.ErrReserved):
+		return "reserved", nil
+	default:
+		return "invalid", err
+	}
+}
+
 func (api *DOIDApi) GetOwner(params DOIDName) (string, error) {
 	state, err := api.chain.LatestState()
 	if err != nil {
 		return "", err
 	}
-	owner, err := state.Get(types.DOIDHash(params.DOID))
+	owner, err := state.Get(doid.DOIDHash(params.DOID))
 	if err != nil {
 		return "", err
 	}
@@ -37,7 +61,7 @@ func (api *DOIDApi) GetOwnerDOIDNames(owner types.Hash) ([]string, error) {
 	if err != nil {
 		return ret, err
 	}
-	names, _ := types.GetOwnerDOIDNames(state, owner)
+	names, _ := doid.GetOwnerDOIDNames(state, owner)
 	for _, v := range names {
 		ret = append(ret, fmt.Sprint(v))
 	}

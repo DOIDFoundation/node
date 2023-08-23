@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 
-	"github.com/DOIDFoundation/node/types"
+	"github.com/DOIDFoundation/node/doid"
 	"github.com/DOIDFoundation/node/types/tx"
 	"github.com/cosmos/iavl"
 )
@@ -20,7 +20,7 @@ func (u *Update) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
 		return errors.New("missing args: Signature")
 	}
 
-	existsOwner, err := state.Get(types.DOIDHash(args.DOID))
+	existsOwner, err := state.Get(doid.DOIDHash(args.DOID))
 	if err != nil {
 		return err
 	}
@@ -31,7 +31,7 @@ func (u *Update) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
 		return errors.New("update to same owner")
 	}
 
-	valid := ValidateDoidNameSignatrue(args.DOID, existsOwner, args.Signature)
+	valid := doid.ValidateDoidNameSignatrue(args.DOID, existsOwner, args.Signature)
 	if valid {
 		return nil
 	} else {
@@ -44,7 +44,7 @@ func (u *Update) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, error)
 	if !ok {
 		return resRejected, errors.New("bad tx type")
 	}
-	key := types.DOIDHash(update.DOID)
+	key := doid.DOIDHash(update.DOID)
 	has, err := tree.Has(key)
 	if err != nil {
 		return resRejected, err
@@ -57,11 +57,11 @@ func (u *Update) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, error)
 	if err != nil {
 		return resRejected, err
 	}
-	err = types.UpdateOwnerDOIDNames(tree, ownerBefore, update.DOID, false)
+	err = doid.UpdateOwnerDOIDNames(tree, ownerBefore, update.DOID, false)
 	if err != nil {
 		return resRejected, err
 	}
-	err = types.UpdateOwnerDOIDNames(tree, update.Owner, update.DOID, true)
+	err = doid.UpdateOwnerDOIDNames(tree, update.Owner, update.DOID, true)
 	if err != nil {
 		return resRejected, err
 	}

@@ -1,21 +1,22 @@
-package types
+package doid
 
 import (
 	"encoding/hex"
 	"errors"
 
 	"github.com/DOIDFoundation/node/config"
+	"github.com/DOIDFoundation/node/types"
 	"github.com/cosmos/iavl"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
 var hashMaxResult, _ = hex.DecodeString("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
 
-func DOIDHash(doid string) Hash {
+func DOIDHash(doid string) types.Hash {
 	return crypto.Keccak256([]byte(doid))
 }
 
-func OwnerHash(owner Address) Hash {
+func OwnerHash(owner types.Address) types.Hash {
 	return crypto.Keccak256([]byte(owner))
 }
 
@@ -23,7 +24,7 @@ func OwnerStatePrefix() []byte {
 	return []byte(":owner:")
 }
 
-func UpdateOwnerDOIDNames(tree *iavl.MutableTree, owner Address, name string, add bool) error {
+func UpdateOwnerDOIDNames(tree *iavl.MutableTree, owner types.Address, name string, add bool) error {
 	if !config.IsOwnerFork(tree.Version()) {
 		return nil
 	}
@@ -46,7 +47,7 @@ func UpdateOwnerDOIDNames(tree *iavl.MutableTree, owner Address, name string, ad
 	return nil
 }
 
-func GetOwnerDOIDNames(tree *iavl.ImmutableTree, owner Address) ([][]byte, error) {
+func GetOwnerDOIDNames(tree *iavl.ImmutableTree, owner types.Address) ([][]byte, error) {
 	names := [][]byte{}
 	ownerHash := OwnerHash(owner)
 	ownerPrefix := OwnerStatePrefix()
