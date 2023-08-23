@@ -209,13 +209,19 @@ func (n *Network) startSync() {
 	// find a best peer with most total difficulty
 	var best *state
 	var bestId peer.ID
-	for id := range peerHasState {
+	peerHasState.Range(func(key, _ interface{}) bool {
+		id, ok := key.(peer.ID)
+		if !ok {
+			n.Logger.Error("failed to convert key to peer id", "key", key)
+			return true
+		}
 		peerState := getPeerState(n.host.Peerstore(), id)
 		if best == nil || (peerState != nil && peerState.Td.Cmp(best.Td) > 0) {
 			best = peerState
 			bestId = id
 		}
-	}
+		return true
+	})
 	if best == nil || best.Td.Cmp(n.blockChain.GetTd()) <= 0 {
 		n.Logger.Debug("not starting sync", "msg", "no better network td")
 		n.syncing.Store(false)
