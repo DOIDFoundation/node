@@ -3,31 +3,50 @@ package network
 import (
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/multiformats/go-multiaddr"
 )
 
 type API struct {
 	net *Network
 }
 
-type Status struct {
-	PeersInTopic peer.IDSlice `json:"peersInTopic"`
-	Connections  Connections  `json:"connections"`
+func (api *API) Status() map[string]int {
+	return map[string]int{
+		"peers":        len(api.net.host.Network().Peers()),
+		"peersInTopic": len(api.net.discovery.topic.ListPeers()),
+		"connections":  len(api.net.host.Network().Conns()),
+	}
 }
 
-func (api *API) Status() Status {
-	return Status{
-		PeersInTopic: api.net.discovery.topic.ListPeers(),
-		Connections:  api.Connections(),
-	}
+func (api *API) Peers() peer.IDSlice {
+	return api.net.host.Network().Peers()
 }
 
 func (api *API) PeersInStore() peer.IDSlice {
 	return api.net.host.Peerstore().Peers()
 }
 
-func (api *API) Peers() peer.IDSlice {
-	return api.net.host.Network().Peers()
+func (api *API) PeersInTopic() peer.IDSlice {
+	return api.net.discovery.topic.ListPeers()
+}
+
+func (api *API) PeersWithVersion() (c []map[string]interface{}) {
+	for _, p := range api.net.host.Network().Peers() {
+		ret := map[string]interface{}{
+			"peerID": p,
+			"addrs":  api.net.host.Peerstore().Addrs(p),
+			"conns":  len(api.net.host.Network().ConnsToPeer(p)),
+		}
+		if agentVersion, err := api.net.host.Peerstore().Get(p, "AgentVersion"); err == nil {
+			ret["version"] = agentVersion
+		}
+		if _, ok := peerHasState.Load(p); ok {
+			peerState := getPeerState(api.net.host.Peerstore(), p)
+			ret["height"] = peerState.Height
+			ret["td"] = peerState.Td
+		}
+		c = append(c, ret)
+	}
+	return
 }
 
 type Connections struct {
@@ -38,10 +57,18 @@ type Connections struct {
 func (api *API) Connections() (c Connections) {
 	c.Num = len(api.net.host.Network().Conns())
 	for _, conn := range api.net.host.Network().Conns() {
-		a := peer.AddrInfo{ID: conn.RemotePeer(), Addrs: []multiaddr.Multiaddr{conn.RemoteMultiaddr()}}
-		ret := a.Loggable()
-		if agentVersion, err := api.net.host.Peerstore().Get(a.ID, "AgentVersion"); err == nil {
+		id := conn.RemotePeer()
+		ret := map[string]interface{}{
+			"peer": id,
+			"addr": conn.RemoteMultiaddr(),
+		}
+		if agentVersion, err := api.net.host.Peerstore().Get(id, "AgentVersion"); err == nil {
 			ret["version"] = agentVersion
+		}
+		if _, ok := peerHasState.Load(id); ok {
+			peerState := getPeerState(api.net.host.Peerstore(), id)
+			ret["height"] = peerState.Height
+			ret["td"] = peerState.Td
 		}
 		c.Connections = append(c.Connections, ret)
 	}
