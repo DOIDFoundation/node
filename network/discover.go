@@ -119,7 +119,7 @@ func (d *discovery) pubsubDiscover() {
 			logger.Debug("no peer in topic, wait")
 			for _, peerInfo := range d.bootstrapPeers() {
 				go func(peerInfo peer.AddrInfo) {
-					d.connect(peerInfo)
+					d.bootstrap(peerInfo)
 				}(peerInfo)
 			}
 		} else if bz, err := rlp.EncodeToBytes(&state{Height: d.chain.LatestBlock().Header.Height.Uint64(), Td: new(big.Int).Set(d.chain.GetTd())}); err != nil {
@@ -164,7 +164,7 @@ func (d *discovery) bootstrapPeers() (addrs []peer.AddrInfo) {
 	return
 }
 
-func (d *discovery) connect(peerInfo peer.AddrInfo) {
+func (d *discovery) bootstrap(peerInfo peer.AddrInfo) {
 	d.Logger.Debug("try connect", "peer", peerInfo, "type", "bootstrap")
 	d.host.ConnManager().Protect(peerInfo.ID, "bootstrap")
 	if err := d.host.Connect(ctx, peerInfo); err != nil {
@@ -184,13 +184,13 @@ func (d *discovery) setupDiscover() {
 		wg.Add(1)
 		go func(peerInfo peer.AddrInfo) {
 			defer wg.Done()
-			d.connect(peerInfo)
+			d.bootstrap(peerInfo)
 		}(peerInfo)
 	}
 
 	// Now connect to the backup peers to speedup bootstrap.
 	for _, peerInfo := range d.loadBackupPeers() {
-		go d.connect(peerInfo)
+		go d.bootstrap(peerInfo)
 	}
 
 	// wait all bootstrap peers are connected or unreachable
@@ -209,7 +209,10 @@ func (d *discovery) setupDiscover() {
 
 	d.wg.Add(1)
 	go d.pubsubDiscover()
+	d.dhtDiscover()
+}
 
+func (d *discovery) dhtDiscover() {
 	// Bootstrap the DHT. In the default configuration, this spawns a Background
 	// thread that will refresh the peer table every five minutes.
 	d.Logger.Debug("Bootstrapping DHT")
@@ -239,8 +242,16 @@ func (d *discovery) setupDiscover() {
 				if p.ID == d.host.ID() || len(p.Addrs) == 0 || d.host.Network().Connectedness(p.ID) == network.Connected {
 					continue
 				}
+				// try connect only if we do not have enough peers
+				if len(d.host.Network().Peers()) >= MinConnectedPeers {
+					break
+				}
 				d.Logger.Debug("dht found peer", "peer", p)
-				d.host.Connect(ctx, p)
+				go func(p peer.AddrInfo) {
+					if err := d.host.Connect(ctx, p); err != nil {
+						d.Logger.Debug("failed to connect", "peer", p.ID, "err", err)
+					}
+				}(p)
 			}
 		}
 
@@ -263,7 +274,10 @@ func randomizeList[T any](in []T) []T {
 
 var keyBackupPeers = datastore.NewKey("backup_peers")
 
-const MaxBackupBootstrapSize = 20
+const (
+	MaxBackupBootstrapSize = 20
+	MinConnectedPeers      = 20
+)
 
 func (d *discovery) loadBackupPeers() []peer.AddrInfo {
 	var addrs []string

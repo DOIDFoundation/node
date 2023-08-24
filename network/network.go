@@ -273,6 +273,14 @@ func (n *Network) registerEventHandlers() {
 					n.stateHandler(stream)
 				}()
 			case 0:
+				// try connect if we do not have enough peers
+				if len(n.host.Network().Peers()) < MinConnectedPeers {
+					go func() {
+						if err := n.host.Connect(ctx, peer.AddrInfo{ID: pid}); err != nil {
+							n.Logger.Debug("failed to connect", "peer", pid, "err", err)
+						}
+					}()
+				}
 			case 1: // network is high
 				n.startSync()
 			}
