@@ -51,7 +51,7 @@ type BlockChain struct {
 	stateDb cosmosdb.DB
 	state   *iavl.MutableTree
 
-	muUncle     sync.Mutex
+	MuUncle     sync.Mutex
 	LocalUncles map[common.Hash]*types.Block // uncle set
 }
 
@@ -212,11 +212,15 @@ func (bc *BlockChain) registerEventHandlers() {
 		if data.Td.Cmp(bc.latestTD) > 0 {
 			bc.Logger.Info("better network td, maybe a fork", "block", block.Hash(), "header", block.Header, "td", data.Td)
 			events.ForkDetected.Send(struct{}{})
-		} else {
+		}
+		if block.Header.Height.Uint64() < bc.latestBlock.Header.Height.Uint64()+1 {
 			bc.Logger.Info("into localUncle", "block", block.Hash(), "header", block.Header, "td", data.Td)
 
-			bc.muUncle.Lock()
-			defer bc.muUncle.Unlock()
+			bc.MuUncle.Lock()
+			defer bc.MuUncle.Unlock()
+
+			//blockT := bc.BlockByHeight(bc.latestBlock.Header.Height.Uint64() - 1)
+			//block.Header.ParentHash = blockT.Hash()
 			bc.LocalUncles[common.BytesToHash(block.Header.Hash().Bytes())] = block
 		}
 	})
