@@ -5,7 +5,7 @@ func initDevnetForks() {
 }
 
 func initTestnetForks() {
-	OwnerFork = 104870
+	OwnerFork = 218000
 }
 
 func isFork(height int64, fork int64) bool {
