@@ -9,7 +9,15 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-type Hash = cmtbytes.HexBytes
+// HashSize is the size of hash.
+const HashSize = 32
+
+type (
+	Hash = cmtbytes.HexBytes
+
+	// HashKey is the fixed length array key used as an index.
+	HashKey = [HashSize]byte
+)
 
 // hasherPool holds LegacyKeccak256 hashers for rlpHash.
 var hasherPool = sync.Pool{
@@ -22,7 +30,13 @@ func rlpHash(x interface{}) Hash {
 	defer hasherPool.Put(sha)
 	sha.Reset()
 	rlp.Encode(sha, x)
-	var h [32]byte
+	var h [HashSize]byte
 	sha.Read(h[:])
 	return h[:]
+}
+
+func HashToKey(hash Hash) HashKey {
+	var k HashKey
+	copy(k[:], hash)
+	return k
 }
