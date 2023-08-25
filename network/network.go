@@ -14,7 +14,6 @@ import (
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/DOIDFoundation/node/version"
-	"github.com/cometbft/cometbft/crypto/tmhash"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -134,8 +133,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	network.host, err = libp2p.New(
 		libp2p.Identity(network.loadPrivateKey()),
 		libp2p.ListenAddrStrings(viper.GetStringSlice(flags.P2P_Addr)...),
-		libp2p.UserAgent(version.VersionWithCommit()),
-		libp2p.PrivateNetwork(tmhash.Sum([]byte(viper.GetString(flags.P2P_Rendezvous)))),
+		libp2p.UserAgent(UserAgent()),
 		libp2p.ResourceManager(rm),
 		libp2p.ConnectionManager(cm),
 		libp2p.Security(noise.ID, noise.New),
@@ -375,4 +373,20 @@ func decodeKey(s string) (crypto.PrivKey, error) {
 	} else {
 		return crypto.UnmarshalEd25519PrivateKey(bz)
 	}
+}
+
+func UserAgent() string {
+	vsn := "doid/"
+	if version.VersionMeta != "stable" {
+		vsn += version.VersionWithMeta
+	} else {
+		vsn += version.Version
+	}
+	if len(version.Commit) >= 8 {
+		vsn += "/" + version.Commit[:8]
+	}
+	if (version.VersionMeta != "stable") && (version.Date != "") {
+		vsn += "/" + version.Date
+	}
+	return vsn
 }

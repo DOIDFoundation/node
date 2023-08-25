@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ipfs/go-datastore"
 	dsbadger "github.com/ipfs/go-ds-badger"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -155,6 +156,7 @@ func (d *discovery) HandlePeerFound(pi peer.AddrInfo) {
 }
 
 func (d *discovery) bootstrapPeers() (addrs []peer.AddrInfo) {
+	addrs = dht.GetDefaultBootstrapPeerAddrInfos()
 	peerInfo, err := peer.AddrInfoFromString("/dnsaddr/bootstrap.doid.tech/p2p/12D3KooWF94jbGD8VKsiiDnYTCDCbbiLPV3Z8yVfGsZFQWTocF8N")
 	if err == nil {
 		addrs = append(addrs, *peerInfo)
