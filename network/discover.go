@@ -34,7 +34,7 @@ type discovery struct {
 	chain  *core.BlockChain
 	host   host.Host
 	pubsub *pubsub.PubSub
-	topic  topicWrapper
+	topic  *pubsub.Topic
 	dht    *dual.DHT
 	ds     *dsbadger.Datastore
 	wg     sync.WaitGroup
@@ -73,12 +73,14 @@ func (d *discovery) OnStop() {
 	}
 }
 
-func (d *discovery) topicPeerHandler(TopicPeer string) *pubsub.Topic {
+func (d *discovery) pubsubDiscover() {
+	defer d.wg.Done()
 	logger := d.Logger.With("topic", TopicPeer)
-	topic, err := d.pubsub.Join(TopicPeer)
+	var err error
+	d.topic, err = d.pubsub.Join(TopicPeer)
 	if err != nil {
 		logger.Error("Failed to join pubsub topic", "err", err)
-		return nil
+		return
 	}
 	logger.Debug("pubsub topic joined")
 
@@ -98,17 +100,7 @@ func (d *discovery) topicPeerHandler(TopicPeer string) *pubsub.Topic {
 		}
 	}
 
-	go pubsubMessageLoop(ctx, topic, d.host.ID(), peerFound, logger)
-	return topic
-}
-
-func (d *discovery) pubsubDiscover() {
-	defer d.wg.Done()
-	d.topic = joinTestnetTopics(TopicPeer, d.topicPeerHandler)
-	if d.topic == nil {
-		return
-	}
-	logger := d.Logger
+	go pubsubMessageLoop(ctx, d.topic, d.host.ID(), peerFound, logger)
 
 	duration := time.Second
 	ticker := time.NewTicker(duration)

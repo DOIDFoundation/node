@@ -7,13 +7,14 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
-func (n *Network) topicTxHandler(TopicTx string) *pubsub.Topic {
+func (n *Network) joinTopicTx() {
 	logger := n.Logger.With("topic", TopicTx)
 	topic, err := n.pubsub.Join(TopicTx)
 	if err != nil {
 		logger.Error("Failed to join pubsub topic", "err", err)
-		return nil
+		return
 	}
+	n.topicTx = topic
 
 	onTx := func(msg *pubsub.Message) {
 		data := msg.GetData()
@@ -28,10 +29,4 @@ func (n *Network) topicTxHandler(TopicTx string) *pubsub.Topic {
 	}
 
 	go pubsubMessageLoop(ctx, topic, n.host.ID(), onTx, logger)
-	return topic
-}
-
-func (n *Network) joinTopicTx() {
-	// @todo Compatible with legacy testnet topics, recover this with topicTxHandler later
-	n.topicTx = joinTestnetTopics(TopicTx, n.topicTxHandler)
 }

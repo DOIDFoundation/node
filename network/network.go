@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -42,8 +41,8 @@ type Network struct {
 	host       host.Host
 	discovery  *discovery
 	pubsub     *pubsub.PubSub
-	topicBlock topicWrapper
-	topicTx    topicWrapper
+	topicBlock *pubsub.Topic
+	topicTx    *pubsub.Topic
 	blockChain *core.BlockChain
 	syncing    atomic.Bool
 	sync       *syncService
@@ -177,8 +176,6 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 func (n *Network) OnStart() error {
 	n.host.Network().Notify(n)
 	n.host.SetStreamHandler(protocol.ID(ProtocolGetBlocks), n.getBlocksHandler)
-	// @todo remove testnet legacy protocol id.
-	n.host.SetStreamHandler(protocol.ID(strings.Replace(ProtocolGetBlocks, "/doid/2/", "/doid/", 1)), n.getBlocksHandler)
 	n.host.SetStreamHandler(protocol.ID(ProtocolState), n.stateHandler)
 
 	go n.joinTopicBlock()

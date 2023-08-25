@@ -6,13 +6,14 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
-func (n *Network) topicBlockHandler(TopicBlock string) *pubsub.Topic {
+func (n *Network) joinTopicBlock() {
 	logger := n.Logger.With("topic", TopicBlock)
 	topic, err := n.pubsub.Join(TopicBlock)
 	if err != nil {
 		logger.Error("Failed to join pubsub topic", "err", err)
-		return nil
+		return
 	}
+	n.topicBlock = topic
 
 	// Pipeline decodes the incoming subscription data, runs the validation, and handles the
 	// message.
@@ -31,10 +32,4 @@ func (n *Network) topicBlockHandler(TopicBlock string) *pubsub.Topic {
 	}
 
 	go pubsubMessageLoop(ctx, topic, n.host.ID(), pipeline, logger)
-	return topic
-}
-
-func (n *Network) joinTopicBlock() {
-	// @todo Compatible with legacy testnet topics, recover this with topicBlockHandler later
-	n.topicBlock = joinTestnetTopics(TopicBlock, n.topicBlockHandler)
 }
