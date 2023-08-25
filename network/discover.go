@@ -105,6 +105,9 @@ func (d *discovery) topicPeerHandler(TopicPeer string) *pubsub.Topic {
 func (d *discovery) pubsubDiscover() {
 	defer d.wg.Done()
 	d.topic = joinTestnetTopics(TopicPeer, d.topicPeerHandler)
+	if d.topic == nil {
+		return
+	}
 	logger := d.Logger
 
 	duration := time.Second
@@ -119,6 +122,9 @@ func (d *discovery) pubsubDiscover() {
 			}
 			logger.Debug("no peer in topic, wait")
 			for _, peerInfo := range d.bootstrapPeers() {
+				if d.host.Network().Connectedness(peerInfo.ID) == network.Connected {
+					break
+				}
 				go func(peerInfo peer.AddrInfo) {
 					d.bootstrap(peerInfo)
 				}(peerInfo)
