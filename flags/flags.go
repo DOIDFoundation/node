@@ -26,4 +26,7 @@ const (
 	RPC_Ws        = "rpc.ws.enabled"
 	RPC_WsAddr    = "rpc.ws.addr"
 	RPC_WsOrigins = "rpc.ws.origins"
+
+	Admin_RPC     = "admin.rpc.enabled"
+	Admin_RPCAddr = "admin.rpc.addr"
 )

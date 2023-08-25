@@ -1,11 +1,17 @@
 package network
 
 import (
+	"context"
+
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 type API struct {
+	net *Network
+}
+
+type PrivateAPI struct {
 	net *Network
 }
 
@@ -75,7 +81,18 @@ func (api *API) Connections() (c Connections) {
 	return
 }
 
+func (api *PrivateAPI) Connect(ctx context.Context, s string) error {
+	addr, err := peer.AddrInfoFromString(s)
+	if err != nil {
+		return err
+	}
+	if err = api.net.host.Connect(ctx, *addr); err != nil {
+		return err
+	}
+	return nil
+}
+
 func RegisterAPI(net *Network) {
-	api := &API{net: net}
-	rpc.RegisterName("network", api)
+	rpc.RegisterName("network", &API{net: net})
+	rpc.RegisterName("admin", &PrivateAPI{net: net})
 }
