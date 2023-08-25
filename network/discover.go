@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ipfs/go-datastore"
 	dsbadger "github.com/ipfs/go-ds-badger"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -35,7 +36,7 @@ type discovery struct {
 	pubsub *pubsub.PubSub
 	topic  topicWrapper
 	dht    *dual.DHT
-	ds     *dsbadger.Datastore
+	ds     datastore.Datastore
 	wg     sync.WaitGroup
 
 	mdns mdns.Service
@@ -43,11 +44,12 @@ type discovery struct {
 
 func newDiscovery(logger log.Logger, chain *core.BlockChain, h host.Host, dht *dual.DHT, pubsub *pubsub.PubSub) *discovery {
 	dataDir := filepath.Join(viper.GetString(flags.Home), "data", "libp2p-peers-backup")
-
+	var ds datastore.Datastore
 	ds, err := dsbadger.NewDatastore(dataDir, &dsbadger.DefaultOptions)
 	if err != nil {
-		logger.Error("Failed to create badger store", "err", err, "path", dataDir)
-		return nil
+		ds = datastore.NewMapDatastore()
+		// logger.Error("Failed to create badger store", "err", err, "path", dataDir)
+		// return nil
 	}
 	d := &discovery{chain: chain, host: h, pubsub: pubsub, dht: dht, ds: ds}
 	d.BaseService = *service.NewBaseService(logger.With("module", "network", "service", "discovery"), "Discovery", d)
@@ -104,6 +106,9 @@ func (d *discovery) topicPeerHandler(TopicPeer string) *pubsub.Topic {
 func (d *discovery) pubsubDiscover() {
 	defer d.wg.Done()
 	d.topic = joinTestnetTopics(TopicPeer, d.topicPeerHandler)
+	if d.topic == nil {
+		return
+	}
 	logger := d.Logger
 
 	duration := time.Second
@@ -118,6 +123,9 @@ func (d *discovery) pubsubDiscover() {
 			}
 			logger.Debug("no peer in topic, wait")
 			for _, peerInfo := range d.bootstrapPeers() {
+				if d.host.Network().Connectedness(peerInfo.ID) == network.Connected {
+					break
+				}
 				go func(peerInfo peer.AddrInfo) {
 					d.bootstrap(peerInfo)
 				}(peerInfo)
@@ -155,6 +163,13 @@ func (d *discovery) HandlePeerFound(pi peer.AddrInfo) {
 }
 
 func (d *discovery) bootstrapPeers() (addrs []peer.AddrInfo) {
+	for _, addr := range d.host.Addrs() {
+		for _, protocol := range addr.Protocols() {
+			if protocol.Code == multiaddr.P_QUIC || protocol.Code == multiaddr.P_QUIC_V1 {
+				return dht.GetDefaultBootstrapPeerAddrInfos()
+			}
+		}
+	}
 	peerInfo, err := peer.AddrInfoFromString("/dnsaddr/bootstrap.doid.tech/p2p/12D3KooWF94jbGD8VKsiiDnYTCDCbbiLPV3Z8yVfGsZFQWTocF8N")
 	if err == nil {
 		addrs = append(addrs, *peerInfo)

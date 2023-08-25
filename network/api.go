@@ -2,9 +2,11 @@ package network
 
 import (
 	"context"
+	"time"
 
 	"github.com/DOIDFoundation/node/rpc"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 type API struct {
@@ -86,9 +88,21 @@ func (api *PrivateAPI) Connect(ctx context.Context, s string) error {
 	if err != nil {
 		return err
 	}
+
 	if err = api.net.host.Connect(ctx, *addr); err != nil {
 		return err
 	}
+	ctx, cancel := context.WithTimeout(ctx, time.Second*15)
+	defer cancel()
+	stream, err := api.net.host.NewStream(ctx, addr.ID, protocol.ID(ProtocolState))
+	if err != nil {
+		api.net.Logger.Debug("failed to create stream", "err", err, "peer", addr)
+		return err
+	}
+	stream.CloseRead()
+	api.net.stateHandler(stream)
+
+	api.net.Logger.Debug("connected", "peer", addr)
 	return nil
 }
 

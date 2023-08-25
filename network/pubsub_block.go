@@ -28,6 +28,11 @@ func (n *Network) topicBlockHandler(TopicBlock string) *pubsub.Topic {
 		updatePeerState(n.host.Peerstore(), msg.GetFrom(), &state{Height: blockEvent.Block.Header.Height.Uint64(), Td: blockEvent.Td})
 
 		events.NewNetworkBlock.Send(blockEvent)
+		if n.Forward.topicBlock != nil {
+			data := msg.GetData()
+			logger.Debug("forward block", "peer", msg.GetFrom())
+			n.Forward.topicBlock.Publish(ctx, data)
+		}
 	}
 
 	go pubsubMessageLoop(ctx, topic, n.host.ID(), pipeline, logger)

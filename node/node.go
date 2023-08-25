@@ -28,6 +28,7 @@ type Node struct {
 	mempool   *mempool.Mempool
 	consensus *consensus.Consensus
 	network   *network.Network
+	privnet   *network.Network
 }
 
 // Option sets a parameter for the node.
@@ -44,6 +45,7 @@ func NewNode(logger log.Logger, options ...Option) (*Node, error) {
 		config:  &DefaultConfig,
 		rpc:     rpc.NewRPC(logger),
 		chain:   chain,
+		privnet: network.NewPrivNetwork(chain, logger),
 		network: network.NewNetwork(chain, logger),
 		mempool: mempool.NewMempool(chain, logger),
 	}
@@ -86,6 +88,11 @@ func (n *Node) OnStart() error {
 	if err := n.network.Start(); err != nil {
 		return err
 	}
+	if n.privnet != nil {
+		n.privnet.Start()
+		n.privnet.ForwardBlock(n.network)
+		n.network.ForwardBlock(n.privnet)
+	}
 	return nil
 }
 
@@ -93,6 +100,10 @@ func (n *Node) OnStart() error {
 func (n *Node) OnStop() {
 	n.network.Stop()
 	n.network.Wait()
+	if n.privnet != nil {
+		n.privnet.Stop()
+		n.privnet.Wait()
+	}
 
 	if n.consensus != nil && n.consensus.IsRunning() {
 		n.consensus.Stop()

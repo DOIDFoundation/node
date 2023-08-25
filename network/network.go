@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,6 +33,7 @@ import (
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/spf13/viper"
 )
 
@@ -47,7 +49,108 @@ type Network struct {
 	topicTx    topicWrapper
 	blockChain *core.BlockChain
 	syncing    atomic.Bool
+	Forward    *Network
 	sync       *syncService
+}
+
+func UserAgent() string {
+	vsn := "doid/"
+	if version.VersionMeta != "stable" {
+		vsn += version.VersionWithMeta
+	} else {
+		vsn += version.Version
+	}
+	if len(version.Commit) >= 8 {
+		vsn += "/" + version.Commit[:8]
+	}
+	if (version.VersionMeta != "stable") && (version.Date != "") {
+		vsn += "/" + version.Date
+	}
+	return vsn
+}
+
+func (n *Network) bootstrapPeers(h host.Host) (addrs []peer.AddrInfo) {
+	for _, addr := range h.Addrs() {
+		for _, protocol := range addr.Protocols() {
+			if protocol.Code == multiaddr.P_QUIC || protocol.Code == multiaddr.P_QUIC_V1 {
+				return dht.GetDefaultBootstrapPeerAddrInfos()
+			}
+		}
+	}
+	peerInfo, err := peer.AddrInfoFromString("/dnsaddr/bootstrap.doid.tech/p2p/12D3KooWF94jbGD8VKsiiDnYTCDCbbiLPV3Z8yVfGsZFQWTocF8N")
+	if err == nil {
+		addrs = append(addrs, *peerInfo)
+	} else {
+		n.Logger.Error("failed to parse bootstrap peer", "err", err)
+	}
+	return
+}
+
+func (n *Network) ForwardBlock(forward *Network) {
+	n.Forward = forward
+}
+
+func NewPrivNetwork(chain *core.BlockChain, logger log.Logger) *Network {
+	addrs := viper.GetStringSlice(flags.P2P_Addr)
+	addrsPub := []string{}
+	addrsPriv := []string{}
+	re := regexp.MustCompile("udp/.*/quic.*$")
+	for _, addr := range addrs {
+		if re.MatchString(addr) {
+			addrsPub = append(addrsPub, addr)
+		} else {
+			addrsPriv = append(addrsPriv, addr)
+		}
+	}
+	if len(addrsPriv) == 0 {
+		return nil
+	}
+	viper.Set(flags.P2P_Addr, addrsPub)
+
+	network := &Network{
+		blockChain: chain,
+	}
+	network.BaseService = *service.NewBaseService(logger.With("module", "privnet"), "PrivNet", network)
+
+	var idht *dual.DHT
+	var err error
+	network.host, err = libp2p.New(
+		libp2p.Identity(network.loadPrivateKey()),
+		libp2p.ListenAddrStrings(addrsPriv...),
+		libp2p.UserAgent(UserAgent()),
+		libp2p.PrivateNetwork(tmhash.Sum([]byte(viper.GetString(flags.P2P_Rendezvous)))),
+		libp2p.Security(noise.ID, noise.New),
+		// Attempt to open ports using uPNP for NATed hosts.
+		libp2p.NATPortMap(),
+		// Let this host use the DHT to find other hosts
+		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
+			idht, err = dual.New(ctx, h,
+				dual.DHTOption(dht.BootstrapPeers(network.bootstrapPeers(h)...)),
+				dual.DHTOption(dht.ProtocolPrefix("/doid/kad/1")),
+			)
+			return idht, err
+		}),
+	)
+	if err != nil {
+		network.Logger.Error("Failed to create libp2p host", "err", err)
+		return nil
+	}
+	network.Logger.Info("Host created.", "id", network.host.ID(), "addrs", network.host.Addrs())
+
+	network.pubsub, err = pubsub.NewGossipSub(ctx, network.host)
+	if err != nil {
+		network.Logger.Error("Failed to create pubsub", "err", err)
+		return nil
+	}
+
+	network.discovery = newDiscovery(logger, chain, network.host, idht, network.pubsub)
+	if network.discovery == nil {
+		network.Logger.Error("Failed to create discovery service")
+		return nil
+	}
+
+	network.registerEventHandlers()
+	return network
 }
 
 func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
@@ -134,8 +237,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	network.host, err = libp2p.New(
 		libp2p.Identity(network.loadPrivateKey()),
 		libp2p.ListenAddrStrings(viper.GetStringSlice(flags.P2P_Addr)...),
-		libp2p.UserAgent(version.VersionWithCommit()),
-		libp2p.PrivateNetwork(tmhash.Sum([]byte(viper.GetString(flags.P2P_Rendezvous)))),
+		libp2p.UserAgent(UserAgent()),
 		libp2p.ResourceManager(rm),
 		libp2p.ConnectionManager(cm),
 		libp2p.Security(noise.ID, noise.New),
@@ -146,7 +248,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			idht, err = dual.New(ctx, h,
 				dual.WanDHTOption(dht.Datastore(dsDht)),
-				dual.DHTOption(dht.BootstrapPeers(network.discovery.bootstrapPeers()...)),
+				dual.DHTOption(dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...)),
 				dual.DHTOption(dht.ProtocolPrefix("/doid/kad/1")),
 			)
 			return idht, err
