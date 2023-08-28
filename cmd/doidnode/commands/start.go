@@ -23,9 +23,15 @@ func init() {
 	StartCmd.Flags().String(flags.RPC_WsAddr, "127.0.0.1:8557", "RPC over websocket listen address")
 	StartCmd.Flags().StringSlice(flags.RPC_WsOrigins, []string{"*"}, "Origins from which to accept websockets requests")
 	StartCmd.Flags().StringSlice(flags.P2P_Addr, []string{"/ip4/0.0.0.0/tcp/26667", "/ip4/0.0.0.0/udp/26667/quic"}, "Libp2p listen address")
-	StartCmd.Flags().StringP(flags.P2P_Rendezvous, "r", "doidnode", "Libp2p rendezvous string used for peer discovery, do not change this unless you need a private network")
+	StartCmd.Flags().StringSlice(flags.P2P_AnnAddr, nil, "Libp2p addresses to announce (Will replace auto detected addresses, do not replace by default)")
+	StartCmd.Flags().StringSlice(flags.P2P_AnnAddrAppend, nil, "Will be appended to libp2p addresses to announce")
+	StartCmd.Flags().StringSlice(flags.P2P_AnnAddrRemove, nil, "Will be removed from libp2p addresses to announce, in ip cidr format (e.g. '/ip4/127.0.0.1/ipcidr/32', '/ip4/192.168.0.0/ipcidr/24')")
+	StartCmd.Flags().String(flags.P2P_Rendezvous, "doidnode", "Libp2p rendezvous string used for peer discovery, do not change this unless you need a private network")
 	StartCmd.Flags().String(flags.P2P_Key, "", "Private key to generate libp2p peer identity")
-	StartCmd.Flags().String(flags.P2P_KeyFile, "p2p.key", "Private key file to generate libp2p peer identity")
+	StartCmd.Flags().String(flags.P2P_KeyFile, "p2p.key", "Private key file to generate libp2p peer identity (will be used if p2p.key is not set)")
+	StartCmd.Flags().Bool(flags.P2P_RelaySvc, true, "Enable libp2p relay service")
+	StartCmd.Flags().Bool(flags.P2P_uPNP, true, "Enable uPNP for for NATed hosts")
+	StartCmd.Flags().String(flags.P2P_Reachability, "", "Force libp2p reachability ('public' or 'private', otherwise auto detect)")
 }
 
 // StartCmd is the command that allows the CLI to start a node.

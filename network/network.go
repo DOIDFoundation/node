@@ -2,8 +2,11 @@ package network
 
 import (
 	"context"
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,6 +24,7 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/config"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -30,6 +34,7 @@ import (
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/spf13/viper"
 )
 
@@ -129,7 +134,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	}
 
 	var idht *dual.DHT
-	network.host, err = libp2p.New(
+	options := []config.Option{
 		libp2p.Identity(network.loadPrivateKey()),
 		libp2p.ListenAddrStrings(viper.GetStringSlice(flags.P2P_Addr)...),
 		libp2p.UserAgent(UserAgent()),
@@ -137,8 +142,7 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 		libp2p.ConnectionManager(cm),
 		libp2p.Security(noise.ID, noise.New),
 		libp2p.Peerstore(ps),
-		// Attempt to open ports using uPNP for NATed hosts.
-		libp2p.NATPortMap(),
+		libp2p.EnableNATService(),
 		// Let this host use the DHT to find other hosts
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			idht, err = dual.New(ctx, h,
@@ -148,7 +152,22 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 			)
 			return idht, err
 		}),
-	)
+		libp2p.AddrsFactory(network.addrsFactory),
+	}
+	if viper.GetBool(flags.P2P_RelaySvc) {
+		options = append(options, libp2p.EnableRelayService())
+	}
+	if viper.GetBool(flags.P2P_uPNP) {
+		// NATPortMap will attempt to open ports using uPNP for NATed hosts.
+		options = append(options, libp2p.NATPortMap())
+	}
+	switch viper.GetString(flags.P2P_Reachability) {
+	case "public":
+		options = append(options, libp2p.ForceReachabilityPublic())
+	case "private":
+		options = append(options, libp2p.ForceReachabilityPrivate())
+	}
+	network.host, err = libp2p.New(options...)
 	if err != nil {
 		network.Logger.Error("Failed to create libp2p host", "err", err)
 		return nil
@@ -386,4 +405,82 @@ func UserAgent() string {
 		vsn += "/" + version.Date
 	}
 	return vsn
+}
+
+var ErrInvalidFormat = errors.New("invalid multiaddr-filter format")
+
+func NewMask(a string) (*net.IPNet, error) {
+	parts := strings.Split(a, "/")
+
+	if parts[0] != "" {
+		return nil, ErrInvalidFormat
+	}
+
+	if len(parts) != 5 {
+		return nil, ErrInvalidFormat
+	}
+
+	// check it's a valid filter address. ip + cidr
+	isip := parts[1] == "ip4" || parts[1] == "ip6"
+	iscidr := parts[3] == "ipcidr"
+	if !isip || !iscidr {
+		return nil, ErrInvalidFormat
+	}
+
+	_, ipn, err := net.ParseCIDR(parts[2] + "/" + parts[4])
+	if err != nil {
+		return nil, err
+	}
+	return ipn, nil
+}
+
+func (n *Network) addrsFactory(as []multiaddr.Multiaddr) []multiaddr.Multiaddr {
+	parseAddrs := func(addrs []string, ret *[]multiaddr.Multiaddr) {
+		for _, addr := range addrs {
+			a, err := multiaddr.NewMultiaddr(addr)
+			if err != nil {
+				n.Logger.Error("Failed to parse address", "err", err, "addr", addr)
+				continue
+			}
+			*ret = append(*ret, a)
+		}
+	}
+	var addrs []multiaddr.Multiaddr
+	if ann := viper.GetStringSlice(flags.P2P_AnnAddr); len(ann) != 0 {
+		parseAddrs(ann, &addrs)
+	} else {
+		addrs = as
+	}
+	if add := viper.GetStringSlice(flags.P2P_AnnAddrAppend); len(add) != 0 {
+		parseAddrs(add, &addrs)
+	}
+	if exclude := viper.GetStringSlice(flags.P2P_AnnAddrRemove); len(exclude) != 0 {
+		filters := multiaddr.NewFilters()
+		noAnnAddrs := map[string]bool{}
+		for _, addr := range exclude {
+			f, err := NewMask(addr)
+			if err == nil {
+				filters.AddFilter(*f, multiaddr.ActionDeny)
+				continue
+			}
+			maddr, err := multiaddr.NewMultiaddr(addr)
+			if err != nil {
+				n.Logger.Error("Failed to parse address", "err", err, "addr", addr)
+				continue
+			}
+			noAnnAddrs[string(maddr.Bytes())] = true
+		}
+		var out []multiaddr.Multiaddr
+		for _, maddr := range addrs {
+			// check for exact matches
+			ok := noAnnAddrs[string(maddr.Bytes())]
+			// check for /ipcidr matches
+			if !ok && !filters.AddrBlocked(maddr) {
+				out = append(out, maddr)
+			}
+		}
+		return out
+	}
+
+	return addrs
 }
