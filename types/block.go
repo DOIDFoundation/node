@@ -2,8 +2,6 @@ package types
 
 import (
 	"bytes"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"math/big"
 
 	"github.com/cometbft/cometbft/crypto/merkle"
@@ -138,7 +136,7 @@ func CalcDifficulty(time uint64, parent *Header) *big.Int {
 	x := new(big.Int).SetUint64(time - parent.Time)
 	x.Div(x, big10)
 
-	if common.BytesToHash(parent.UncleHash.Bytes()) == types.EmptyUncleHash {
+	if bytes.Equal(parent.UncleHash.Bytes(), Headers(nil).Hash()) {
 		x.Sub(big1, x)
 	} else {
 		x.Sub(big2, x)

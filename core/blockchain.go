@@ -51,13 +51,16 @@ type BlockChain struct {
 	stateDb cosmosdb.DB
 	state   *iavl.MutableTree
 
+	MuUncle     sync.Mutex
 	LocalUncles map[common.Hash]*types.Block // uncle set
 }
 
+type Hash2 [32]byte
+
 func NewBlockChain(logger log.Logger) (*BlockChain, error) {
-	config.Init()
 	bc := &BlockChain{
-		Logger: logger.With("module", "blockchain"),
+		Logger:      logger.With("module", "blockchain"),
+		LocalUncles: make(map[common.Hash]*types.Block),
 	}
 	failed := true
 	var err error
@@ -92,7 +95,7 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 	block := bc.blockStore.ReadHeadBlock()
 	if block == nil {
 		bc.Logger.Info("no head block found, generate from genesis")
-		block = types.NewBlockWithHeader(GenesisHeader(config.NetworkID))
+		block = types.NewBlockWithHeader(types.GenesisHeader(config.NetworkID))
 		bc.latestTD = new(big.Int)
 		bc.writeBlockAndTd(block)
 		bc.blockStore.WriteHashByHeight(block.Header.Height.Uint64(), block.Hash(), block.Header.Miner)
@@ -203,15 +206,22 @@ func (bc *BlockChain) registerEventHandlers() {
 			} else if !errors.Is(err, types.ErrNotContiguous) {
 				bc.Logger.Info("discard block from network", "err", err, "block", block.Hash(), "header", block.Header)
 
-				bc.LocalUncles[common.BytesToHash(block.Header.Hash().Bytes())] = block
-				bc.LocalUncles[common.BytesToHash(block.Header.Hash().Bytes())] = block
-
 				return
 			}
 		}
 		if data.Td.Cmp(bc.latestTD) > 0 {
 			bc.Logger.Info("better network td, maybe a fork", "block", block.Hash(), "header", block.Header, "td", data.Td)
-			events.ForkDetected.Send()
+			events.ForkDetected.Send(struct{}{})
+		}
+		if block.Header.Height.Uint64() < bc.latestBlock.Header.Height.Uint64()+1 {
+			bc.Logger.Info("into localUncle", "block", block.Hash(), "header", block.Header, "td", data.Td)
+
+			bc.MuUncle.Lock()
+			defer bc.MuUncle.Unlock()
+
+			//blockT := bc.BlockByHeight(bc.latestBlock.Header.Height.Uint64() - 1)
+			//block.Header.ParentHash = blockT.Hash()
+			bc.LocalUncles[common.BytesToHash(block.Header.Hash().Bytes())] = block
 		}
 	})
 }

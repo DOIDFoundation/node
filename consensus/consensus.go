@@ -274,6 +274,10 @@ func (c *Consensus) newWorkLoop() {
 
 // CommitUncle adds the given block to uncle block set, returns error if failed to add.
 func (c *Consensus) CommitUncle(env *environment, uncle *types.Header) error {
+	//for v := range env.ancestors.Iterator().C {
+	//	c.Logger.Info("ancestors", "hash", v)
+	//}
+	//c.Logger.Info("ancestors", "phash", uncle.ParentHash)
 	hash := uncle.Hash()
 	if env.uncles.Contains(common.BytesToHash(hash.Bytes())) {
 		return errors.New("uncle not unique")
@@ -338,7 +342,9 @@ func (c *Consensus) commitWork() {
 
 	// Accumulate the uncles for the current block
 	uncles := make([]*types.Header, 0, 2)
-	commitUncles := func(blocks map[common.Hash]*types.Block) {
+	commitUncles := func(mu sync.Mutex, blocks map[common.Hash]*types.Block) {
+		mu.Lock()
+		defer mu.Unlock()
 		// Clean up stale uncle blocks first
 		for hash, uncle := range blocks {
 			if uncle.Header.Height.Uint64()+uint64(staleThreshold) <= header.Height.Uint64() {
@@ -349,6 +355,7 @@ func (c *Consensus) commitWork() {
 			if len(uncles) == 2 {
 				break
 			}
+			c.Logger.Error("Test uncle", "b", uncle.Header, "hash", hash)
 			if err := c.CommitUncle(c.currentEnv, uncle.Header); err != nil {
 				c.Logger.Info("Possible uncle rejected", "hash", hash, "reason", err)
 			} else {
@@ -358,9 +365,16 @@ func (c *Consensus) commitWork() {
 		}
 	}
 	// Prefer to locally generated uncle
-	commitUncles(c.chain.LocalUncles)
+	if len(c.chain.LocalUncles) > 0 {
+		c.Logger.Info("localUncles", "localUncles", c.chain.LocalUncles)
+		commitUncles(c.chain.MuUncle, c.chain.LocalUncles)
+	}
 
-	block.Uncles = uncles
+	if len(uncles) > 0 {
+		c.Logger.Debug("I have uncles ", "block", block)
+		block.Uncles = uncles
+	}
+
 	c.current = block
 
 	select {
