@@ -3,6 +3,7 @@ package transactor_test
 import (
 	"testing"
 
+	"github.com/DOIDFoundation/node/doid"
 	"github.com/DOIDFoundation/node/transactor"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/DOIDFoundation/node/types/tx"
@@ -38,16 +39,16 @@ func TestUpdate(t *testing.T) {
 	assert.EqualValues(t, 1, state.Version())
 	assert.EqualValues(t, hash, result.StateRoot)
 
-	_owner, _ := state.Get(types.DOIDHash(doidname))
+	_owner, _ := state.Get(doid.DOIDHash(doidname))
 	assert.EqualValues(t, _owner, owner2.Bytes())
-	names, _ := types.GetOwnerDOIDNames(state.ImmutableTree, owner.Bytes())
+	names, _ := doid.GetOwnerDOIDNames(state.ImmutableTree, owner.Bytes())
 	var namesBytes = [][]byte{}
 	for _, x := range names {
 		namesBytes = append(namesBytes, []byte(x))
 	}
 	assert.EqualValues(t, namesBytes, [][]byte{})
 
-	names2, _ := types.GetOwnerDOIDNames(state.ImmutableTree, owner2.Bytes())
+	names2, _ := doid.GetOwnerDOIDNames(state.ImmutableTree, owner2.Bytes())
 	namesBytes = [][]byte{}
 	for _, x := range names2 {
 
