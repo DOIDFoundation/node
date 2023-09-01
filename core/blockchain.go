@@ -221,6 +221,7 @@ func (bc *BlockChain) registerEventHandlers() {
 
 			//blockT := bc.BlockByHeight(bc.latestBlock.Header.Height.Uint64() - 1)
 			//block.Header.ParentHash = blockT.Hash()
+
 			bc.LocalUncles[common.BytesToHash(block.Header.Hash().Bytes())] = block
 		}
 	})
