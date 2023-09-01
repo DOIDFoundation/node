@@ -25,7 +25,7 @@ func OwnerStatePrefix() []byte {
 }
 
 func UpdateOwnerDOIDNames(tree *iavl.MutableTree, owner types.Address, name string, add bool) error {
-	if !config.IsOwnerFork(tree.Version()) {
+	if !config.OwnerFork.Forked(tree.Version()) {
 		return nil
 	}
 	nameHash := DOIDHash(name)

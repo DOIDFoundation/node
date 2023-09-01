@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"math/big"
 
+	"github.com/DOIDFoundation/node/config"
 	"github.com/cometbft/cometbft/crypto/merkle"
 )
 
@@ -119,6 +120,8 @@ var (
 	GenesisDifficulty      = big.NewInt(131072) // Difficulty of the Genesis block.
 	MinimumDifficulty      = big.NewInt(131072) // The minimum that the difficulty may ever be.
 	DurationLimit          = big.NewInt(13)     // The decision boundary on the blocktime duration used to determine whether difficulty should go up or not.
+
+	nilHeadersHash = Headers{}.Hash()
 )
 
 func CalcDifficulty(time uint64, parent *Header) *big.Int {
@@ -136,7 +139,7 @@ func CalcDifficulty(time uint64, parent *Header) *big.Int {
 	x := new(big.Int).SetUint64(time - parent.Time)
 	x.Div(x, big10)
 
-	if bytes.Equal(parent.UncleHash.Bytes(), Headers(nil).Hash()) {
+	if !config.UncleFork.Forked(parent.Height.Int64()) || bytes.Equal(parent.UncleHash.Bytes(), nilHeadersHash) {
 		x.Sub(big1, x)
 	} else {
 		x.Sub(big2, x)

@@ -16,8 +16,8 @@ const (
 var (
 	NetworkID = DevNet
 
-	// forks, negative value means not forked yet, zero means forked from genesis
-	OwnerFork int64 = -1 // fork to store doid by owner
+	OwnerFork ForkNumber // fork to store doid by owner
+	UncleFork ForkNumber // fork to enable uncle in header
 )
 
 func IsTestnet() bool {

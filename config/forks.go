@@ -1,17 +1,23 @@
 package config
 
+// forks, zero means not forked yet, 1 means forked from genesis
+type ForkNumber struct {
+	value int64
+}
+
 func initDevnetForks() {
-	OwnerFork = 0
+	OwnerFork.set(1)
+	UncleFork.set(1)
 }
 
 func initTestnetForks() {
-	OwnerFork = 218000
+	OwnerFork.set(218000)
 }
 
-func isFork(height int64, fork int64) bool {
-	return fork >= 0 && height >= fork
+func (n *ForkNumber) Forked(height int64) bool {
+	return n.value > 0 && height >= n.value
 }
 
-func IsOwnerFork(height int64) bool {
-	return isFork(height, OwnerFork)
+func (n *ForkNumber) set(height int64) {
+	n.value = height
 }

@@ -4,14 +4,15 @@ import (
 	crand "crypto/rand"
 	"encoding/binary"
 	"errors"
-	mapset "github.com/deckarep/golang-set/v2"
-	"github.com/ethereum/go-ethereum/common"
 	"math"
 	"math/big"
 	"math/rand"
 	"runtime"
 	"sync"
 	"time"
+
+	mapset "github.com/deckarep/golang-set/v2"
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/DOIDFoundation/node/core"
 	"github.com/DOIDFoundation/node/events"
@@ -306,17 +307,17 @@ func (c *Consensus) commitWork() {
 
 	var (
 		parent = c.chain.LatestBlock()
-		block  = types.NewBlockWithHeader(parent.Header)
+		block  = types.NewBlockWithHeader(&types.Header{})
 		header = block.Header
 	)
 
-	c.target = new(big.Int).Div(two256, header.Difficulty)
+	c.target = new(big.Int).Div(two256, parent.Header.Difficulty)
 
 	header.ParentHash = parent.Hash()
 	header.Miner = c.miner
 	header.Time = uint64(time.Now().Unix())
-	header.Height.Add(header.Height, big.NewInt(1))
-	header.Difficulty.Set(types.CalcDifficulty(header.Time, parent.Header))
+	header.Height = new(big.Int).Add(parent.Header.Height, big.NewInt(1))
+	header.Difficulty = new(big.Int).Set(types.CalcDifficulty(header.Time, parent.Header))
 	header.Root = result.StateRoot
 	header.TxHash = result.TxRoot
 	header.ReceiptHash = result.ReceiptRoot
@@ -371,8 +372,8 @@ func (c *Consensus) commitWork() {
 	}
 
 	if len(uncles) > 0 {
-		c.Logger.Debug("I have uncles ", "block", block)
 		block.Uncles = uncles
+		c.Logger.Debug("I have uncles ", "block", block, "header", block.Header)
 	}
 
 	c.current = block
