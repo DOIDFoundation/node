@@ -203,6 +203,7 @@ func (bc *BlockChain) registerEventHandlers() {
 				bc.Logger.Info("discard block from network", "err", err, "block", block.Hash(), "header", block.Header)
 
 				bc.LocalUncles[common.BytesToHash(block.Header.Hash().Bytes())] = block
+				bc.LocalUncles[common.BytesToHash(block.Header.Hash().Bytes())] = block
 
 				return
 			}
