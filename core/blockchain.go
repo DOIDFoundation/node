@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	mapset "github.com/deckarep/golang-set/v2"
-	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 	"path/filepath"
 	"sync"
+
+	mapset "github.com/deckarep/golang-set/v2"
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/DOIDFoundation/node/config"
 	"github.com/DOIDFoundation/node/events"
@@ -58,6 +59,7 @@ type BlockChain struct {
 type Hash2 [32]byte
 
 func NewBlockChain(logger log.Logger) (*BlockChain, error) {
+	config.Init()
 	bc := &BlockChain{
 		Logger:      logger.With("module", "blockchain"),
 		LocalUncles: make(map[common.Hash]*types.Block),
@@ -95,7 +97,7 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 	block := bc.blockStore.ReadHeadBlock()
 	if block == nil {
 		bc.Logger.Info("no head block found, generate from genesis")
-		block = types.NewBlockWithHeader(types.GenesisHeader(config.NetworkID))
+		block = types.NewBlockWithHeader(GenesisHeader(config.NetworkID))
 		bc.latestTD = new(big.Int)
 		bc.writeBlockAndTd(block)
 		bc.blockStore.WriteHashByHeight(block.Header.Height.Uint64(), block.Hash(), block.Header.Miner)
@@ -211,7 +213,7 @@ func (bc *BlockChain) registerEventHandlers() {
 		}
 		if data.Td.Cmp(bc.latestTD) > 0 {
 			bc.Logger.Info("better network td, maybe a fork", "block", block.Hash(), "header", block.Header, "td", data.Td)
-			events.ForkDetected.Send(struct{}{})
+			events.ForkDetected.Send()
 		}
 		if block.Header.Height.Uint64() < bc.latestBlock.Header.Height.Uint64()+1 {
 			bc.Logger.Info("into localUncle", "block", block.Hash(), "header", block.Header, "td", data.Td)
