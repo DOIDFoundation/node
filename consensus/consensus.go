@@ -357,7 +357,7 @@ func (c *Consensus) commitWork() {
 			}
 			c.Logger.Error("Test uncle", "b", uncle.Header, "hash", hash)
 			if err := c.CommitUncle(c.currentEnv, uncle.Header); err != nil {
-				c.Logger.Info("Possible uncle rejected", "hash", hash, "reason", err)
+				c.Logger.Debug("Possible uncle rejected", "hash", hash, "reason", err)
 			} else {
 				c.Logger.Debug("Committing new uncle to block", "hash", hash)
 				uncles = append(uncles, uncle.Header)
