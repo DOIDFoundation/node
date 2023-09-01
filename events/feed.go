@@ -14,6 +14,8 @@ type Subscription[T any] struct {
 	w *sync.WaitGroup
 }
 
+// Event feed with data of type T.
+//
 // Wrapper of go-ethereum/event.FeedOf that provides easier Subscribe and
 // Unsubscribe calls
 type FeedOf[T any] struct {
@@ -62,4 +64,21 @@ func (e *FeedOf[T]) Unsubscribe(id string) *sync.WaitGroup {
 		return sub.w
 	}
 	return &sync.WaitGroup{}
+}
+
+// Event feed without data.
+type Feed struct {
+	FeedOf[struct{}]
+}
+
+func (f *Feed) Send() (sent int) {
+	return f.feed.Send(struct{}{})
+}
+
+func (f *Feed) Subscribe(id string, callback func()) {
+	f.FeedOf.Subscribe(id, func(struct{}) { callback() })
+}
+
+func (f *Feed) Unsubscribe(id string) *sync.WaitGroup {
+	return f.FeedOf.Unsubscribe(id)
 }

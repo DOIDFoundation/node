@@ -3,16 +3,12 @@ package transactor
 import (
 	"errors"
 
-	"github.com/DOIDFoundation/node/types"
+	"github.com/DOIDFoundation/node/doid"
 	"github.com/DOIDFoundation/node/types/tx"
 	"github.com/cosmos/iavl"
 )
 
 type Register struct{}
-
-var classANameLength int = 2
-var classBNameLength int = 4
-var classCNameLength int = 6
 
 func (r *Register) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
 	args := t.(*tx.Register)
@@ -23,11 +19,11 @@ func (r *Register) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
 		return errors.New("missing args: Signature")
 	}
 
-	if !ValidateDoidName(args.DOID, classCNameLength) {
-		return errors.New("invalid doid name")
+	if err := doid.ValidateDoidName(args.DOID, doid.ClassCNameLength); err != nil {
+		return err
 	}
 
-	existsOwner, err := state.Get(types.DOIDHash(args.DOID))
+	existsOwner, err := state.Get(doid.DOIDHash(args.DOID))
 	if err != nil {
 		return err
 	}
@@ -35,7 +31,7 @@ func (r *Register) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
 		return errors.New("doidname has already been registered")
 	}
 
-	valid := ValidateDoidNameSignatrue(args.DOID, args.Owner, args.Signature)
+	valid := doid.ValidateDoidNameSignatrue(args.DOID, args.Owner, args.Signature)
 	if valid {
 		return nil
 	} else {
@@ -48,7 +44,7 @@ func (r *Register) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, erro
 	if !ok {
 		return resRejected, errors.New("bad tx type")
 	}
-	key := types.DOIDHash(register.DOID)
+	key := doid.DOIDHash(register.DOID)
 	has, err := tree.Has(key)
 	if err != nil {
 		return resRejected, err
@@ -62,10 +58,16 @@ func (r *Register) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, erro
 	if err != nil {
 		return resRejected, err
 	}
+
+	err = doid.UpdateOwnerDOIDNames(tree, register.Owner, register.DOID, true)
+	if err != nil {
+		return resRejected, err
+	}
 	return resSuccess, nil
 }
 
 func init() {
 	registerTransactor(tx.TypeRegister, &Register{})
 	registerTransactor(tx.TypeReserve, &Reserve{})
+	registerTransactor(tx.TypeUpdate, &Update{})
 }

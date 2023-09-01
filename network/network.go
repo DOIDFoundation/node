@@ -2,9 +2,11 @@ package network
 
 import (
 	"context"
-	"math/big"
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,7 +16,6 @@ import (
 	"github.com/DOIDFoundation/node/flags"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/DOIDFoundation/node/version"
-	"github.com/cometbft/cometbft/crypto/tmhash"
 	"github.com/cometbft/cometbft/libs/log"
 	"github.com/cometbft/cometbft/libs/service"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -23,6 +24,7 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/config"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -32,6 +34,7 @@ import (
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/spf13/viper"
 )
 
@@ -40,25 +43,20 @@ var ctx, cancelCtx = context.WithCancel(context.Background())
 type Network struct {
 	service.BaseService
 
-	host          host.Host
-	discovery     *discovery
-	pubsub        *pubsub.PubSub
-	topicBlock    *pubsub.Topic
-	topicTx       *pubsub.Topic
-	blockChain    *core.BlockChain
-	networkHeight *big.Int
-	syncing       atomic.Bool
-	sync          *syncService
-	peerPool      map[string]peer.AddrInfo
+	host       host.Host
+	discovery  *discovery
+	pubsub     *pubsub.PubSub
+	topicBlock *pubsub.Topic
+	topicTx    *pubsub.Topic
+	blockChain *core.BlockChain
+	syncing    atomic.Bool
+	sync       *syncService
 }
 
 func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	initConstants()
 	network := &Network{
 		blockChain: chain,
-
-		networkHeight: big.NewInt(0),
-		peerPool:      make(map[string]peer.AddrInfo),
 	}
 	network.BaseService = *service.NewBaseService(logger.With("module", "network"), "Network", network)
 
@@ -136,17 +134,15 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 	}
 
 	var idht *dual.DHT
-	network.host, err = libp2p.New(
+	options := []config.Option{
 		libp2p.Identity(network.loadPrivateKey()),
 		libp2p.ListenAddrStrings(viper.GetStringSlice(flags.P2P_Addr)...),
-		libp2p.UserAgent(version.VersionWithCommit()),
-		libp2p.PrivateNetwork(tmhash.Sum([]byte(viper.GetString(flags.P2P_Rendezvous)))),
+		libp2p.UserAgent(UserAgent()),
 		libp2p.ResourceManager(rm),
 		libp2p.ConnectionManager(cm),
 		libp2p.Security(noise.ID, noise.New),
 		libp2p.Peerstore(ps),
-		// Attempt to open ports using uPNP for NATed hosts.
-		libp2p.NATPortMap(),
+		libp2p.EnableNATService(),
 		// Let this host use the DHT to find other hosts
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			idht, err = dual.New(ctx, h,
@@ -156,7 +152,22 @@ func NewNetwork(chain *core.BlockChain, logger log.Logger) *Network {
 			)
 			return idht, err
 		}),
-	)
+		libp2p.AddrsFactory(network.addrsFactory),
+	}
+	if viper.GetBool(flags.P2P_RelaySvc) {
+		options = append(options, libp2p.EnableRelayService())
+	}
+	if viper.GetBool(flags.P2P_uPNP) {
+		// NATPortMap will attempt to open ports using uPNP for NATed hosts.
+		options = append(options, libp2p.NATPortMap())
+	}
+	switch viper.GetString(flags.P2P_Reachability) {
+	case "public":
+		options = append(options, libp2p.ForceReachabilityPublic())
+	case "private":
+		options = append(options, libp2p.ForceReachabilityPrivate())
+	}
+	network.host, err = libp2p.New(options...)
 	if err != nil {
 		network.Logger.Error("Failed to create libp2p host", "err", err)
 		return nil
@@ -186,8 +197,8 @@ func (n *Network) OnStart() error {
 	n.host.SetStreamHandler(protocol.ID(ProtocolGetBlocks), n.getBlocksHandler)
 	n.host.SetStreamHandler(protocol.ID(ProtocolState), n.stateHandler)
 
-	go n.registerBlockSubscribers()
-	go n.registerTxSubscribers()
+	go n.joinTopicBlock()
+	go n.joinTopicTx()
 
 	n.discovery.Start()
 
@@ -212,27 +223,35 @@ func (n *Network) startSync() {
 	// find a best peer with most total difficulty
 	var best *state
 	var bestId peer.ID
-	for id := range peerHasState {
+	peerHasState.Range(func(key, _ interface{}) bool {
+		id, ok := key.(peer.ID)
+		if !ok {
+			n.Logger.Error("failed to convert key to peer id", "key", key)
+			return true
+		}
 		peerState := getPeerState(n.host.Peerstore(), id)
 		if best == nil || (peerState != nil && peerState.Td.Cmp(best.Td) > 0) {
 			best = peerState
 			bestId = id
 		}
-	}
+		return true
+	})
 	if best == nil || best.Td.Cmp(n.blockChain.GetTd()) <= 0 {
 		n.Logger.Debug("not starting sync", "msg", "no better network td")
 		n.syncing.Store(false)
 		return
 	}
 	n.Logger.Info("start syncing")
-	events.SyncStarted.Send(struct{}{})
-	events.SyncFinished.Subscribe(n.String(), func(data struct{}) { n.stopSync() })
+	events.SyncStarted.Send()
+	events.SyncFinished.Subscribe(n.String(), func() { n.stopSync() })
+	eventSyncFailed.Subscribe(n.String(), func() { n.stopSync(); n.startSync() })
 	n.sync = newSyncService(n.Logger, bestId, n.host, n.blockChain)
 	n.sync.Start()
 }
 
 func (n *Network) stopSync() {
 	events.SyncFinished.Unsubscribe(n.String())
+	eventSyncFailed.Unsubscribe(n.String())
 	if !n.syncing.CompareAndSwap(true, false) {
 		n.Logger.Debug("not stopping sync", "msg", "already stopped")
 		return
@@ -268,6 +287,14 @@ func (n *Network) registerEventHandlers() {
 					n.stateHandler(stream)
 				}()
 			case 0:
+				// try connect if we do not have enough peers
+				if len(n.host.Network().Peers()) < MinConnectedPeers {
+					go func() {
+						if err := n.host.Connect(ctx, peer.AddrInfo{ID: pid}); err != nil {
+							n.Logger.Debug("failed to connect", "peer", pid, "err", err)
+						}
+					}()
+				}
 			case 1: // network is high
 				n.startSync()
 			}
@@ -275,12 +302,12 @@ func (n *Network) registerEventHandlers() {
 			// peer connected but we do not need to sync
 			if n.sync == nil || !n.sync.IsRunning() {
 				once.Do(func() {
-					events.SyncFinished.Send(struct{}{})
+					events.SyncFinished.Send()
 				})
 			}
 		}
 	})
-	events.ForkDetected.Subscribe(n.String(), func(data struct{}) {
+	events.ForkDetected.Subscribe(n.String(), func() {
 		n.startSync()
 	})
 	events.NewMinedBlock.Subscribe(n.String(), func(data *types.Block) {
@@ -362,4 +389,98 @@ func decodeKey(s string) (crypto.PrivKey, error) {
 	} else {
 		return crypto.UnmarshalEd25519PrivateKey(bz)
 	}
+}
+
+func UserAgent() string {
+	vsn := "doid/"
+	if version.VersionMeta != "stable" {
+		vsn += version.VersionWithMeta
+	} else {
+		vsn += version.Version
+	}
+	if len(version.Commit) >= 8 {
+		vsn += "/" + version.Commit[:8]
+	}
+	if (version.VersionMeta != "stable") && (version.Date != "") {
+		vsn += "/" + version.Date
+	}
+	return vsn
+}
+
+var ErrInvalidFormat = errors.New("invalid multiaddr-filter format")
+
+func NewMask(a string) (*net.IPNet, error) {
+	parts := strings.Split(a, "/")
+
+	if parts[0] != "" {
+		return nil, ErrInvalidFormat
+	}
+
+	if len(parts) != 5 {
+		return nil, ErrInvalidFormat
+	}
+
+	// check it's a valid filter address. ip + cidr
+	isip := parts[1] == "ip4" || parts[1] == "ip6"
+	iscidr := parts[3] == "ipcidr"
+	if !isip || !iscidr {
+		return nil, ErrInvalidFormat
+	}
+
+	_, ipn, err := net.ParseCIDR(parts[2] + "/" + parts[4])
+	if err != nil {
+		return nil, err
+	}
+	return ipn, nil
+}
+
+func (n *Network) addrsFactory(as []multiaddr.Multiaddr) []multiaddr.Multiaddr {
+	parseAddrs := func(addrs []string, ret *[]multiaddr.Multiaddr) {
+		for _, addr := range addrs {
+			a, err := multiaddr.NewMultiaddr(addr)
+			if err != nil {
+				n.Logger.Error("Failed to parse address", "err", err, "addr", addr)
+				continue
+			}
+			*ret = append(*ret, a)
+		}
+	}
+	var addrs []multiaddr.Multiaddr
+	if ann := viper.GetStringSlice(flags.P2P_AnnAddr); len(ann) != 0 {
+		parseAddrs(ann, &addrs)
+	} else {
+		addrs = as
+	}
+	if add := viper.GetStringSlice(flags.P2P_AnnAddrAppend); len(add) != 0 {
+		parseAddrs(add, &addrs)
+	}
+	if exclude := viper.GetStringSlice(flags.P2P_AnnAddrRemove); len(exclude) != 0 {
+		filters := multiaddr.NewFilters()
+		noAnnAddrs := map[string]bool{}
+		for _, addr := range exclude {
+			f, err := NewMask(addr)
+			if err == nil {
+				filters.AddFilter(*f, multiaddr.ActionDeny)
+				continue
+			}
+			maddr, err := multiaddr.NewMultiaddr(addr)
+			if err != nil {
+				n.Logger.Error("Failed to parse address", "err", err, "addr", addr)
+				continue
+			}
+			noAnnAddrs[string(maddr.Bytes())] = true
+		}
+		var out []multiaddr.Multiaddr
+		for _, maddr := range addrs {
+			// check for exact matches
+			ok := noAnnAddrs[string(maddr.Bytes())]
+			// check for /ipcidr matches
+			if !ok && !filters.AddrBlocked(maddr) {
+				out = append(out, maddr)
+			}
+		}
+		return out
+	}
+
+	return addrs
 }

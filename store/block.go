@@ -18,6 +18,11 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+var (
+	// ErrNotFound is returned when record not found.
+	ErrNotFound = errors.New("not found")
+)
+
 type BlockStore struct {
 	log.Logger
 	db      cmtdb.DB
@@ -89,11 +94,26 @@ func (bs *BlockStore) WriteBlock(block *types.Block) {
 	bs.WriteHeader(block.Header)
 }
 
+func (bs *BlockStore) DeleteBlock(height uint64, hash types.Hash) {
+	header := bs.ReadHeader(height, hash)
+	if header == nil {
+		return
+	}
+	bs.DeleteData(unclesKey(header.UncleHash))
+	bs.DeleteData(txsKey(header.TxHash))
+	bs.DeleteData(receiptsKey(header.ReceiptHash))
+	bs.DeleteHeader(height, hash)
+}
+
 // ReadHeader retrieves the block header corresponding to the hash.
 func (bs *BlockStore) ReadHeader(height uint64, hash types.Hash) *types.Header {
 	header := new(types.Header)
 	if err := bs.ReadData(headerKey(height, hash), header); err != nil {
-		bs.Logger.Error("invalid block header", "err", err, "height", height, "hash", hash)
+		if errors.Is(err, ErrNotFound) {
+			bs.Logger.Debug("block header not found", "height", height, "hash", hash)
+		} else {
+			bs.Logger.Error("invalid block header", "err", err, "height", height, "hash", hash)
+		}
 		return nil
 	}
 	return header
@@ -109,11 +129,15 @@ func (bs *BlockStore) WriteHeader(header *types.Header) {
 	bs.WriteHeightByHash(hash, height)
 }
 
+func (bs *BlockStore) DeleteHeader(height uint64, hash types.Hash) {
+	bs.DeleteData(headerKey(height, hash))
+}
+
 // ReadDataRLP retrieves the data in RLP encoding.
 func (bs *BlockStore) ReadDataRLP(hash types.Hash) rlp.RawValue {
 	bz, err := bs.db.Get(hash)
 	if err != nil {
-		bs.Logger.Error("failed to read block data", "err", err)
+		bs.Logger.Error("failed to read data by hash", "err", err, "hash", hash)
 		return nil
 	}
 
@@ -127,7 +151,7 @@ func (bs *BlockStore) ReadDataRLP(hash types.Hash) rlp.RawValue {
 func (bs *BlockStore) ReadData(hash types.Hash, result interface{}) error {
 	data := bs.ReadDataRLP(hash)
 	if len(data) == 0 {
-		return errors.New("empty data read")
+		return ErrNotFound
 	}
 	return rlp.DecodeBytes(data, result)
 }
@@ -136,11 +160,18 @@ func (bs *BlockStore) WriteData(hash types.Hash, data interface{}) {
 	// Write the encoded data
 	bz, err := rlp.EncodeToBytes(data)
 	if err != nil {
-		bs.Logger.Error("failed to RLP encode header", "err", err)
+		bs.Logger.Error("failed to RLP encode data", "err", err)
 		panic(err)
 	}
 	if err := bs.db.Set(hash, bz); err != nil {
-		bs.Logger.Error("failed to store header by hash", "err", err)
+		bs.Logger.Error("failed to store data", "err", err)
+		panic(err)
+	}
+}
+
+func (bs *BlockStore) DeleteData(hash types.Hash) {
+	if err := bs.db.Delete(hash); err != nil {
+		bs.Logger.Error("failed to delete data by hash", "err", err, "hash", hash)
 		panic(err)
 	}
 }

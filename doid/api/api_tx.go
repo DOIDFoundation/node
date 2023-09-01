@@ -1,4 +1,4 @@
-package doid
+package doidapi
 
 import (
 	"encoding/hex"

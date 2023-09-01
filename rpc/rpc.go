@@ -24,6 +24,10 @@ type RPC struct {
 	httpListener net.Listener
 	ws           *http.Server
 	wsListener   net.Listener
+
+	adminServer       *rpc.Server
+	adminHttp         *http.Server
+	adminHttpListener net.Listener
 }
 
 func NewRPC(logger log.Logger) *RPC {
@@ -48,9 +52,17 @@ func (r *RPC) OnStart() error {
 
 	// Initialize the server.
 	r.rpcServer = rpc.NewServer()
+	r.adminServer = rpc.NewServer()
 
 	// Register RPC services.
 	for _, rpcAPI := range APIs {
+		if err := r.adminServer.RegisterName(rpcAPI.Namespace, rpcAPI.Service); err != nil {
+			return err
+		}
+		// admin apis are not allowed to be called by rpc
+		if rpcAPI.Namespace == "admin" {
+			continue
+		}
 		if err := r.rpcServer.RegisterName(rpcAPI.Namespace, rpcAPI.Service); err != nil {
 			return err
 		}
@@ -66,6 +78,12 @@ func (r *RPC) OnStart() error {
 			r.Logger.Error("failed to enable WebSocket RPC", "err", err)
 		}
 	}
+
+	if viper.GetBool(flags.Admin_RPC) {
+		if err := r.enableAdmin(r.adminServer); err != nil {
+			r.Logger.Error("failed to enable Admin HTTP RPC", "err", err)
+		}
+	}
 	return nil
 }
 
@@ -78,6 +96,28 @@ func (r *RPC) OnStop() {
 		r.ws.Shutdown(context.Background())
 		r.wsListener.Close()
 	}
+}
+
+func (r *RPC) enableAdmin(rpcServer http.Handler) error {
+	listenAddr := viper.GetString(flags.Admin_RPCAddr)
+
+	r.Logger.Debug("try listening", "listenAddr", listenAddr)
+	// Start the server.
+	listener, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		return err
+	}
+	r.adminHttpListener = listener
+	r.adminHttp = &http.Server{
+		Handler:           rpcServer,
+		ReadTimeout:       r.config.HTTPTimeouts.ReadTimeout,
+		ReadHeaderTimeout: r.config.HTTPTimeouts.ReadHeaderTimeout,
+		WriteTimeout:      r.config.HTTPTimeouts.WriteTimeout,
+		IdleTimeout:       r.config.HTTPTimeouts.IdleTimeout,
+	}
+	go r.adminHttp.Serve(listener)
+	r.Logger.Info("Admin HTTP server started", "endpoint", listener.Addr())
+	return nil
 }
 
 func (r *RPC) enableHttp(rpcServer http.Handler) error {

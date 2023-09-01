@@ -50,8 +50,7 @@ func getPeerState(s peerstore.Peerstore, id peer.ID) *state {
 	return peerState
 }
 
-var peerHasState = make(map[peer.ID]bool)
-var peerMutex sync.Mutex
+var peerHasState sync.Map
 
 func updatePeerState(peerStore peerstore.Peerstore, peer peer.ID, peerState *state) (updated bool, err error) {
 	if oldState := getPeerState(peerStore, peer); oldState != nil && oldState.Td.Cmp(peerState.Td) == 0 {
@@ -61,17 +60,13 @@ func updatePeerState(peerStore peerstore.Peerstore, peer peer.ID, peerState *sta
 	} else if err = peerStore.Put(peer, metaState, bz); err != nil {
 		return false, err
 	}
-	peerMutex.Lock()
-	defer peerMutex.Unlock()
-	peerHasState[peer] = true
+	peerHasState.Store(peer, true)
 	return true, nil
 }
 
 func deletePeerState(peerStore peerstore.Peerstore, peer peer.ID) {
 	peerStore.RemovePeer(peer)
-	peerMutex.Lock()
-	defer peerMutex.Unlock()
-	delete(peerHasState, peer)
+	peerHasState.Delete(peer)
 }
 
 func (n *Network) stateHandler(s network.Stream) {
@@ -94,7 +89,7 @@ func (n *Network) stateHandler(s network.Stream) {
 	}
 
 	peer := s.Conn().RemotePeer()
-	if updated, err := updatePeerState(n.host.Peerstore(), peer, peerState); updated == true {
+	if updated, err := updatePeerState(n.host.Peerstore(), peer, peerState); updated {
 		logger.Debug("peer state updated", "peer", peer, "state", peerState)
 		eventPeerState.Send(peer)
 	} else if err != nil {

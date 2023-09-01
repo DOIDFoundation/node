@@ -1,7 +1,7 @@
 PACKAGES=$(shell go list ./...)
 BUILDDIR?=$(CURDIR)/build
 
-COMMIT_HASH := $(shell git rev-parse --short HEAD)
+COMMIT_HASH := $(shell git rev-parse --short=8 HEAD)
 COMMIT_DATE := $(shell git show -s --format=%cs HEAD)
 BUILD_TAGS ?=
 LD_FLAGS = -X github.com/DOIDFoundation/node/version.Commit=$(COMMIT_HASH) \

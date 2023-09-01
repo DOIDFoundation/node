@@ -3,6 +3,7 @@ package transactor_test
 import (
 	"testing"
 
+	"github.com/DOIDFoundation/node/config"
 	"github.com/DOIDFoundation/node/transactor"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/DOIDFoundation/node/types/tx"
@@ -13,6 +14,7 @@ import (
 )
 
 func newState(t *testing.T) *iavl.MutableTree {
+	config.Init()
 	db, err := cosmosdb.NewDB("state", cosmosdb.MemDBBackend, "")
 	require.NoError(t, err)
 	state, err := iavl.NewMutableTree(db, 128, false)

@@ -6,7 +6,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
-func (n *Network) registerBlockSubscribers() {
+func (n *Network) joinTopicBlock() {
 	logger := n.Logger.With("topic", TopicBlock)
 	topic, err := n.pubsub.Join(TopicBlock)
 	if err != nil {

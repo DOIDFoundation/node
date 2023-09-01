@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 
+	"github.com/DOIDFoundation/node/doid"
 	"github.com/DOIDFoundation/node/types"
 	"github.com/DOIDFoundation/node/types/tx"
 	"github.com/cosmos/iavl"
@@ -25,7 +26,7 @@ func (r *Reserve) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
 		return errors.New("invalid admin address")
 	}
 
-	existsOwner, err := state.Get(types.DOIDHash(args.DOID))
+	existsOwner, err := state.Get(doid.DOIDHash(args.DOID))
 	if err != nil {
 		return err
 	}
@@ -33,7 +34,7 @@ func (r *Reserve) Validate(state *iavl.ImmutableTree, t tx.TypedTx) error {
 		return errors.New("doidname has already been registered")
 	}
 
-	valid := ValidateDoidNameSignatrue(args.DOID, args.Owner, args.Signature)
+	valid := doid.ValidateDoidNameSignatrue(args.DOID, args.Owner, args.Signature)
 	if valid {
 		return nil
 	} else {
@@ -46,7 +47,7 @@ func (r *Reserve) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, error
 	if !ok {
 		return resRejected, errors.New("bad tx type")
 	}
-	key := types.DOIDHash(reserve.DOID)
+	key := doid.DOIDHash(reserve.DOID)
 	has, err := tree.Has(key)
 	if err != nil {
 		return resRejected, err
@@ -57,6 +58,10 @@ func (r *Reserve) Apply(tree *iavl.MutableTree, t tx.TypedTx) (resultCode, error
 	}
 
 	_, err = tree.Set(key, reserve.Owner)
+	if err != nil {
+		return resRejected, err
+	}
+	err = doid.UpdateOwnerDOIDNames(tree, reserve.Owner, reserve.DOID, true)
 	if err != nil {
 		return resRejected, err
 	}

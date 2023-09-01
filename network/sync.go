@@ -2,9 +2,9 @@ package network
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -56,21 +56,24 @@ func (s *syncService) dropPeer() {
 
 func (s *syncService) sync() {
 	defer s.wg.Done()
-	s.doSync()
-	events.SyncFinished.Send(struct{}{})
+	if s.doSync() {
+		events.SyncFinished.Send()
+	} else {
+		eventSyncFailed.Send()
+	}
 }
 
 func (s *syncService) doSync() bool {
 	ctx, cancel := context.WithTimeout(ctx, time.Second*15) // @todo add a config/flag for this timeout
 	defer cancel()
-	stream, err := s.host.NewStream(ctx, s.id, protocol.ID(ProtocolGetBlocks))
+	// @todo remove testnet legacy protocol id.
+	stream, err := s.host.NewStream(ctx, s.id, protocol.ID(ProtocolGetBlocks), protocol.ID(strings.Replace(ProtocolGetBlocks, "/doid/2/", "/doid/", 1)))
 	if err != nil {
 		s.Logger.Error("failed to create stream", "err", err)
 		s.dropPeer()
 		return false
 	}
 	defer stream.Close()
-	localHeight := s.chain.LatestBlock().Header.Height
 	v := getPeerState(s.host.Peerstore(), s.id)
 	if v == nil {
 		s.Logger.Error("failed to get peer version")
@@ -78,37 +81,8 @@ func (s *syncService) doSync() bool {
 		return false
 	}
 	remoteHeight := v.Height
-	ancestorHeight := uint64(0)
 	// find which block we can start sync from
-	if remoteHeight > localHeight.Uint64() {
-		// try next block after local height
-		check := localHeight.Uint64() + 1
-		blocks, err := s.getBlocks(stream, check, 1)
-		if err != nil {
-			s.Logger.Info("failed to get block", "err", err)
-			s.dropPeer()
-			return false
-		}
-		block := blocks[0]
-		if err := s.chain.ApplyBlock(block); err != nil {
-			// failed to apply block, check if we can find ancestor
-			if errors.Is(err, types.ErrNotContiguous) {
-				ancestorHeight = s.findAncestor(stream, localHeight.Uint64())
-			} else {
-				s.Logger.Info("failed to apply block", "err", err, "header", block.Header, "hash", block.Hash())
-				s.dropPeer()
-				return false
-			}
-		} else if check >= remoteHeight {
-			// only one block behind, no more to sync
-			return true
-		} else {
-			// current head is ancestor
-			ancestorHeight = check
-		}
-	} else {
-		ancestorHeight = s.findAncestor(stream, remoteHeight)
-	}
+	ancestorHeight := s.findAncestor(stream, remoteHeight)
 	if ancestorHeight == 0 {
 		s.Logger.Info("failed to find ancestor")
 		s.dropPeer()
@@ -146,6 +120,7 @@ func (s *syncService) doSync() bool {
 	if err := s.chain.ApplyHeaderChain(s.hc); err != nil {
 		s.Logger.Info("can not apply header chain", "from", start, "err", err)
 		s.dropPeer()
+		return false
 	}
 	return true
 }
@@ -167,10 +142,30 @@ func (s *syncService) getBlocks(stream network.Stream, height uint64, count uint
 }
 
 func (s *syncService) findAncestor(stream network.Stream, height uint64) uint64 {
+	localHeight := s.chain.LatestBlock().Header.Height
+	if localHeight.Uint64() == 1 {
+		s.Logger.Info("check if we need to start from genesis")
+		check := uint64(2)
+		blocks, err := s.getBlocks(stream, check, 1)
+		if err != nil {
+			s.Logger.Info("can not get block", "height", check)
+			return 0
+		}
+		b := blocks[0]
+		if !s.hc.CanStartFrom(check, b.Hash()) {
+			// we don't have this block, apply and set as ancestor
+			if err := s.hc.AppendBlocks([]*types.Block{b}); err != nil {
+				s.Logger.Debug("failed to append block", "err", err, "height", check)
+				s.dropPeer()
+				return 0
+			}
+			return check
+		}
+	}
 	s.Logger.Info("need to find ancestor", "till", height)
 	// try search 12x16 blocks backwards
 	check := uint64(1)
-	for count := uint64(1); count <= 12; count-- {
+	for count := uint64(1); count <= 12; count++ {
 		skip := count * 16
 		if height > skip {
 			check = height - skip
@@ -186,11 +181,6 @@ func (s *syncService) findAncestor(stream network.Stream, height uint64) uint64 
 		}
 		b := blocks[0]
 		if s.hc.CanStartFrom(check, b.Hash()) {
-			if err := s.hc.AppendBlocks([]*types.Block{b}); err != nil {
-				s.Logger.Debug("failed to append block", "err", err, "height", check)
-				continue
-			}
-			s.Logger.Info("ready to start sync", "from", check)
 			return check
 		}
 	}
@@ -209,11 +199,6 @@ func (s *syncService) findAncestor(stream network.Stream, height uint64) uint64 
 		b := blocks[0]
 		if s.hc.CanStartFrom(check, b.Hash()) {
 			if end-check < 16 {
-				if err := s.hc.AppendBlocks([]*types.Block{b}); err != nil {
-					s.Logger.Debug("failed to append block", "err", err, "height", check)
-					end = check
-					continue
-				}
 				return check
 			}
 			start = check

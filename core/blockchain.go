@@ -55,6 +55,7 @@ type BlockChain struct {
 }
 
 func NewBlockChain(logger log.Logger) (*BlockChain, error) {
+	config.Init()
 	bc := &BlockChain{
 		Logger: logger.With("module", "blockchain"),
 	}
@@ -91,7 +92,7 @@ func NewBlockChain(logger log.Logger) (*BlockChain, error) {
 	block := bc.blockStore.ReadHeadBlock()
 	if block == nil {
 		bc.Logger.Info("no head block found, generate from genesis")
-		block = types.NewBlockWithHeader(types.GenesisHeader(config.NetworkID))
+		block = types.NewBlockWithHeader(GenesisHeader(config.NetworkID))
 		bc.latestTD = new(big.Int)
 		bc.writeBlockAndTd(block)
 		bc.blockStore.WriteHashByHeight(block.Header.Height.Uint64(), block.Hash(), block.Header.Miner)
@@ -210,7 +211,7 @@ func (bc *BlockChain) registerEventHandlers() {
 		}
 		if data.Td.Cmp(bc.latestTD) > 0 {
 			bc.Logger.Info("better network td, maybe a fork", "block", block.Hash(), "header", block.Header, "td", data.Td)
-			events.ForkDetected.Send(struct{}{})
+			events.ForkDetected.Send()
 		}
 	})
 }

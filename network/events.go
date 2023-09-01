@@ -6,5 +6,6 @@ import (
 )
 
 var (
-	eventPeerState = &events.FeedOf[peer.ID]{}
+	eventPeerState  = &events.FeedOf[peer.ID]{}
+	eventSyncFailed = &events.Feed{}
 )
